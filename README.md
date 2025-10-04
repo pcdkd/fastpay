@@ -75,7 +75,16 @@ This is an open-source project. Contributions welcome.
 
 ## License
 
-MIT (details coming soon)
+## License
+
+MIT. Fork it, improve it, deploy it.
+
+If you're building something similar, I'd love to collaborate.
+
+Commercial partnerships available for:
+- White-label terminal deployments
+- POS system integrations
+- Custom hardware manufacturing
 
 ---
 
