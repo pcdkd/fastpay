@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production builds
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables (CRITICAL - contains private keys)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# React Native
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# Metro bundler
+.metro-health-check*
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Hardhat / Smart Contracts
+cache/
+artifacts/
+deployments/*
+!deployments/base-mainnet/  # Keep production deployments
+typechain/
+typechain-types/
+
+# Hardware / Firmware
+*.bin
+*.hex
+*.elf
+*.map
+.pio/
+.platformio/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Secrets and sensitive data
+private-keys/
+credentials/
+secrets/
+*.pem
+*.key
+wallet.json
+keystore/
+
+# Hardware calibration data (device-specific)
+calibration/
+device-config.json
