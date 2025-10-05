@@ -100,6 +100,3 @@ keystore/
 # Hardware calibration data (device-specific)
 calibration/
 device-config.json
-
-# Project documentation (too large for git)
-FastPay-Phase1-ProjectDoc.md
