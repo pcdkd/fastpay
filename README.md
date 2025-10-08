@@ -37,8 +37,10 @@ Invert the flow. Make crypto payments work like Google/Apple Pay:
 🚧 **In Development** (Week 1 of 12)
 
 Currently building Phase 1 proof-of-concept:
-- [x] Hardware component (Raspberry Pi + NFC module)
-- [ ] NFC communication working
+- [x] Hardware setup (PN532 NFC module + USB-UART converter)
+- [x] NFC communication working (Adafruit library, firmware v1.6 detected)
+- [x] Phone tap detection tested
+- [ ] Card emulation implementation (in progress)
 - [ ] First payment completed on Base testnet
 - [ ] Merchant pilot (3 locations)
 

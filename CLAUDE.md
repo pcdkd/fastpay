@@ -1,19 +1,19 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides essential guidance to Claude Code when working with the FastPay codebase.
 
 ## Project Overview
 
-FastPay is an NFC-based cryptocurrency payment terminal system that enables tap-to-pay crypto payments in under 10 seconds. The project inverts the traditional crypto payment flow from "push" (customer-initiated) to "pull" (merchant-initiated) to match credit card UX.
+FastPay is an NFC-based cryptocurrency payment terminal that enables tap-to-pay crypto payments in under 10 seconds. The terminal inverts the traditional crypto flow from "push" (customer-initiated) to "pull" (merchant-initiated) to match credit card UX.
 
-**Current Status:** Phase 1 POC - codebase not yet implemented, architectural planning complete
+**Current Status:** Phase 1 - Hardware setup complete, building NFC bridge and terminal software
 
 **Tech Stack:**
-- **Terminal:** Node.js v20.x (merchant device), Python 3.11+ (NFC bridge)
+- **Terminal:** Node.js v20.x (business logic), Python 3.11+ (NFC hardware bridge)
 - **Blockchain:** Base L2, USDC token
-- **NFC Hardware:** PN532 module via UART (115200 baud)
-- **Customer App:** React Native (Phase 1 test app)
-- **Smart Contracts:** Coinbase Commerce Payments Protocol (Week 3)
+- **NFC Hardware:** PN532 module (UART), Adafruit CircuitPython library
+- **Customer App:** React Native test app (Phase 1)
+- **Smart Contracts:** Coinbase Commerce Payments (Week 3)
 
 ## Architecture Principles
 
@@ -39,15 +39,12 @@ Layer 3: BLOCKCHAIN (Base L2)
 
 **Why this matters:** Enables hardware versatility, testability without blockchain access, and NFC tap works even if RPC is down.
 
-### Development Approaches
+### Development Approach
 
-**Desktop-First (Recommended):** Use USB-to-UART converter to develop on laptop/desktop before migrating to Raspberry Pi. Identical codebase runs on both platforms by changing serial port path.
+**Desktop-First:** Develop on Mac/Linux desktop with USB-to-UART converter, then migrate to Raspberry Pi. Same codebase, just change `NFC_PORT` environment variable.
 
-**Hardware Paths:**
-- Week 1-2: Desktop dev with USB-to-UART converter
-- Week 3+: Raspberry Pi deployment
-- Phase 3: ESP32 phone dongle
-- Phase 4: Custom hardware
+**Current:** macOS desktop with FT232 USB-UART converter (`/dev/tty.usbserial-ABSCDY4Z`)
+**Production:** Raspberry Pi GPIO UART (`/dev/ttyAMA0`)
 
 ## Monorepo Structure
 
@@ -87,54 +84,41 @@ fastpay/
 
 ## Development Commands
 
-### Initial Setup
-
+### Setup
 ```bash
-# Install all dependencies (uses npm workspaces)
-npm install
+npm install  # Install all workspace dependencies
 
-# Desktop development - requires USB-to-UART converter
-cd terminal
-npm run dev:desktop  # Uses /dev/tty.usbserial-XXXX
-
-# Raspberry Pi deployment
-npm run dev:pi       # Uses /dev/ttyAMA0 (GPIO UART)
+# Python dependencies
+pip3 install adafruit-circuitpython-pn532 pyserial
 ```
 
 ### Testing
-
 ```bash
-# Run all tests across packages
-npm test
+# Hardware verification (from test/)
+python3 test-adafruit-pn532.py    # Verify NFC module
+python3 detect-phone-tap.py       # Test phone detection
+python3 card-emulation-raw.py     # Test card emulation
 
-# Hardware verification (run in terminal/)
-python3 scripts/test-serial.py   # Verify USB/UART connection
-python3 scripts/test-nfc.py      # Test PN532 communication
-python3 scripts/test-card-detect.py  # Test NFC card detection
-
-# Contract tests (Week 3)
-cd contracts
-npm test
+# Terminal (when implemented)
+cd terminal && npm test
 ```
 
 ### Environment Configuration
 
-Key environment variables (see `terminal/.env.example`):
-
 ```bash
-# Serial port path (platform-specific)
-NFC_PORT=/dev/ttyAMA0              # Raspberry Pi GPIO
-NFC_PORT=/dev/tty.usbserial-0001   # macOS USB-to-UART
-NFC_PORT=COM3                       # Windows
+# NFC Hardware
+NFC_PORT=/dev/tty.usbserial-ABSCDY4Z  # Platform-specific
+NFC_BAUD_RATE=115200
 
-# Blockchain
-BASE_RPC_URL=https://mainnet.base.org
+# Blockchain (Base Sepolia testnet for development)
+BASE_RPC_URL=https://sepolia.base.org
+CHAIN_ID=84532
+USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
+
+# Merchant
 MERCHANT_PRIVATE_KEY=0x...
-USDC_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
-
-# Week 3: Commerce Payments
-ESCROW_CONTRACT_ADDRESS=0x...
-SETTLEMENT_WINDOW=3600  # 1 hour in seconds
+MERCHANT_NAME="Test Merchant"
+TERMINAL_ID=terminal_001
 ```
 
 ## Payment Flow Implementation
@@ -195,29 +179,24 @@ const types = {
 
 ## NFC Hardware Integration
 
-### UART Communication
+### Critical Configuration
 
-- **Baud Rate:** 115200 bps (fixed)
-- **Protocol:** ISO 14443A (NFC Type 4)
-- **Mode:** Card Emulation (terminal acts as NFC tag)
-- **Max Payload:** 256 bytes
-- **Read Range:** 3-5cm optimal
+**Library:** `adafruit-circuitpython-pn532` (handles complex UART protocol)
 
-### Platform-Specific Serial Ports
-
+**Control Lines:** DTR and RTS must be set LOW for USB-to-UART converters:
 ```python
-# terminal/scripts/nfc_bridge.py
-
-# Desktop development (USB-to-UART)
-PORT = '/dev/tty.usbserial-0001'  # macOS
-PORT = '/dev/ttyUSB0'              # Linux
-PORT = 'COM3'                       # Windows
-
-# Raspberry Pi production (GPIO UART)
-PORT = '/dev/ttyAMA0'
+uart = serial.Serial(PORT, 115200, timeout=1)
+uart.dtr = False  # Required for FT232/CP2102
+uart.rts = False  # Required for FT232/CP2102
+time.sleep(0.2)   # Signal stabilization
 ```
 
-**Important:** TX/RX must be crossed (NFC TX → Pi RX, NFC RX → Pi TX)
+**Platform Ports:**
+- macOS/Linux USB: `/dev/tty.usbserial-*` or `/dev/ttyUSB*`
+- Raspberry Pi GPIO: `/dev/ttyAMA0`
+- Windows: `COM3`, `COM4`, etc.
+
+**Wiring:** TX/RX must cross (Module TX → Converter RX, Module RX → Converter TX)
 
 ## Blockchain Integration (Base L2)
 
@@ -293,20 +272,17 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
 - `@coinbase/commerce-payments` - Escrow protocol
 - `hardhat` - Contract testing and deployment
 
-## Common Gotchas
+## Common Issues
 
-1. **Serial Port Permissions:** May need `sudo usermod -a -G dialout $USER` on Linux
-2. **TX/RX Crossover:** Always connect NFC TX to converter/Pi RX (and vice versa)
-3. **Voltage Levels:** PN532 is 3.3V logic, **not** 5V tolerant
-4. **UART Config on Pi:** Must disable serial console and enable UART in `/boot/config.txt`
-5. **Signature Expiry:** Payment requests expire in 3 minutes (client-side enforcement)
-6. **Gas Estimation:** Base gas prices are ~0.001 Gwei, but spike during congestion
-7. **NFC Timeout:** Customer must tap within 5 seconds of request creation
+1. **"No module named 'adafruit_pn532'"**: Run `pip3 install adafruit-circuitpython-pn532`
+2. **Module not responding**: Set `uart.dtr = False` and `uart.rts = False` after opening port
+3. **TX/RX crossover**: Module TX → Converter RX, Module RX → Converter TX
+4. **Serial permissions (Linux)**: Add user to dialout group or use sudo
+5. **Card emulation**: Adafruit library doesn't support TgInitAsTarget - use raw PN532 commands
 
 ## References
 
-- FastPay-Phase1-ProjectDoc.md - Complete architectural specification
-- README.md - Project overview and roadmap
-- hardware/ - Wiring diagrams and assembly guides
-- docs/DESKTOP_DEV.md - Desktop development setup (when implemented)
-- docs/TROUBLESHOOTING.md - Common issues and solutions (when implemented)
+- **implementation-history.md** - Detailed debugging, hardware setup, implementation decisions
+- **FastPay-Phase1-ProjectDoc.md** - Complete architectural specification (local only)
+- **README.md** - Project overview and roadmap
+- **test/** - Working hardware test scripts and setup documentation
