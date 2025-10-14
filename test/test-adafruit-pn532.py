@@ -25,7 +25,8 @@ try:
     uart.rts = False
     print(f"✅ Port opened with DTR={uart.dtr}, RTS={uart.rts}\n")
 
-    time.sleep(0.2)
+    # Give the PN532 ample time to settle before running firmware probe.
+    time.sleep(1.0)
 
     # Initialize PN532 with Adafruit library
     print("Initializing PN532 with Adafruit library...")

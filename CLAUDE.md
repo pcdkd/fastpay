@@ -2,17 +2,40 @@
 
 This file provides essential guidance to Claude Code when working with the FastPay codebase.
 
+## Quick Start - Where We Are Now
+
+**Current Status:** Week 2 of Phase 1 - Hardware testing complete, building terminal software
+
+**What Works:**
+- ✅ NFC hardware (PN532 module) communicating via USB-UART
+- ✅ Card emulation with phone tap detection (`test/card-emulation-hybrid.py`)
+- ✅ NDEF message creation and transmission
+- ✅ ISO-DEP APDU protocol handling
+
+**What's Next:**
+1. Create `terminal/` directory structure (doesn't exist yet)
+2. Build Node.js payment request layer (EIP-712 signing)
+3. Copy `test/card-emulation-hybrid.py` → `terminal/scripts/nfc_bridge.py`
+4. Add IPC between Node.js and Python (JSON over stdin/stdout)
+5. Test full payment flow with phone
+
+**Key Files to Reference:**
+- `test/card-emulation-hybrid.py` - Working NFC card emulation (PRODUCTION READY)
+- `test/SETUP-SUCCESS.md` - Hardware setup and wiring
+- `test/NEXT-STEPS.md` - Detailed implementation roadmap
+- `FastPay-Phase1-ProjectDoc.md` - Complete architecture spec (gitignored but critical reference)
+
 ## Project Overview
 
 FastPay is an NFC-based cryptocurrency payment terminal that enables tap-to-pay crypto payments in under 10 seconds. The terminal inverts the traditional crypto flow from "push" (customer-initiated) to "pull" (merchant-initiated) to match credit card UX.
 
-**Current Status:** Phase 1 - Hardware setup complete, building NFC bridge and terminal software
+**Current Status:** Phase 1 - Hardware setup complete, card emulation working, ready to build terminal software
 
 **Tech Stack:**
-- **Terminal:** Node.js v20.x (business logic), Python 3.11+ (NFC hardware bridge)
+- **Terminal:** Node.js v20.x (planned - business logic), Python 3.11+ (NFC hardware bridge)
 - **Blockchain:** Base L2, USDC token
-- **NFC Hardware:** PN532 module (UART), Adafruit CircuitPython library
-- **Customer App:** React Native test app (Phase 1)
+- **NFC Hardware:** PN532 module (UART), Adafruit CircuitPython library + raw commands for card emulation
+- **Customer App:** React Native test app (Phase 1, planned)
 - **Smart Contracts:** Coinbase Commerce Payments (Week 3)
 
 ## Architecture Principles
@@ -46,68 +69,78 @@ Layer 3: BLOCKCHAIN (Base L2)
 **Current:** macOS desktop with FT232 USB-UART converter (`/dev/tty.usbserial-ABSCDY4Z`)
 **Production:** Raspberry Pi GPIO UART (`/dev/ttyAMA0`)
 
-## Monorepo Structure
+## Current Project Structure
 
 ```
 fastpay/
+├── test/                    # Hardware testing and validation (CURRENT WORK)
+│   ├── card-emulation-hybrid.py       # WORKING: Card emulation with hybrid approach
+│   ├── detect-phone-tap.py            # WORKING: Phone tap detection
+│   ├── test-adafruit-pn532.py         # WORKING: Basic hardware verification
+│   ├── write-payment-request.py       # WORKING: Write payment to NFC
+│   ├── SETUP-SUCCESS.md               # Hardware setup documentation
+│   ├── NEXT-STEPS.md                  # Development roadmap
+│   └── DEBUG-REPORT.md                # Troubleshooting history
+│
+├── CLAUDE.md                # This file - AI assistant guidance
+├── README.md                # Project overview
+├── implementation-history.md # Detailed implementation decisions
+└── FastPay-Phase1-ProjectDoc.md # Complete architectural spec (gitignored)
+
+# PLANNED STRUCTURE (not yet implemented):
 ├── packages/          # Shared TypeScript types and utilities
-│   ├── types/        # payment-request.ts, nfc-payload.ts
-│   └── utils/        # EIP-712 signature helpers, validation
-│
-├── terminal/         # Merchant terminal (Node.js + Python NFC bridge)
-│   ├── src/
-│   │   ├── wallet.js      # EIP-712 signing with merchant wallet
-│   │   ├── payment.js     # Payment request creation
-│   │   ├── nfc.js         # NFC communication wrapper
-│   │   ├── monitor.js     # Blockchain event monitoring
-│   │   └── commerce/      # Week 3: Commerce Payments integration
-│   └── scripts/
-│       ├── nfc_bridge.py  # Python NFC driver (works on laptop + Pi)
-│       ├── test-serial.py # Serial port verification
-│       └── test-nfc.py    # NFC hardware test
-│
-├── customer-app/     # React Native test app
-│   └── src/
-│       ├── NFCReader.js       # NFC tag reading
-│       ├── PaymentVerifier.js # EIP-712 signature verification
-│       └── WalletConnector.js # MetaMask deep link generation
-│
-├── contracts/        # Week 3: Commerce Payments escrow contracts
-│   └── CommercePayments.sol
-│
-├── dongle/          # Phase 3: ESP32 firmware (future)
-│
-└── hardware/        # Wiring diagrams, 3D models, PCB designs
-    ├── desktop-dev/ # USB-to-UART setup
-    └── pi-terminal/ # Raspberry Pi GPIO wiring
+├── terminal/          # Merchant terminal (Node.js + Python NFC bridge)
+│   ├── src/          # Business logic (wallet, payment, nfc, monitor)
+│   └── scripts/      # Production NFC bridge (copy from test/card-emulation-hybrid.py)
+├── customer-app/      # React Native test app
+└── contracts/         # Week 3: Commerce Payments escrow contracts
 ```
 
 ## Development Commands
 
 ### Setup
 ```bash
-npm install  # Install all workspace dependencies
+# Python dependencies (REQUIRED)
+pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
 
-# Python dependencies
-pip3 install adafruit-circuitpython-pn532 pyserial
+# Node.js dependencies (NOT YET IMPLEMENTED - terminal/ doesn't exist yet)
+# npm install  # Will be needed when terminal/ is created
 ```
 
-### Testing
+### Hardware Testing (test/ directory)
 ```bash
-# Hardware verification (from test/)
-python3 test-adafruit-pn532.py    # Verify NFC module
-python3 detect-phone-tap.py       # Test phone detection
-python3 card-emulation-raw.py     # Test card emulation
+cd test
 
-# Terminal (when implemented)
-cd terminal && npm test
+# Core hardware verification (run these first)
+python3 test-adafruit-pn532.py        # Verify PN532 module responding
+python3 detect-phone-tap.py           # Test phone tap detection
+
+# Card emulation (CURRENT FOCUS)
+python3 card-emulation-hybrid.py      # Full ISO-DEP card emulation with payment request
+python3 card-emulation-simple.py      # Simplified card emulation test
+python3 card-emulation-raw.py         # Raw PN532 commands only
+
+# Payment request writing
+python3 write-payment-request.py      # Write payment request to NFC tag
+python3 write-simple-payment.py       # Write simplified payment data
+
+# Advanced diagnostics
+python3 test-serial.py                # Serial port detection and verification
+python3 test-wire-quality.py          # Control signal testing (DTR/RTS)
+python3 test-baudrates.py             # Baudrate scanning
 ```
+
+### Running Tests
+All tests assume the PN532 module is connected to `/dev/tty.usbserial-ABSCDY4Z`. If your port is different, edit the `PORT` variable at the top of each test file.
 
 ### Environment Configuration
 
+**Current:** No `.env` file needed yet - hardware tests use hardcoded port `/dev/tty.usbserial-ABSCDY4Z`
+
+**When terminal/ is created:** Create `terminal/.env`:
 ```bash
 # NFC Hardware
-NFC_PORT=/dev/tty.usbserial-ABSCDY4Z  # Platform-specific
+NFC_PORT=/dev/tty.usbserial-ABSCDY4Z  # macOS desktop with FT232 USB-UART
 NFC_BAUD_RATE=115200
 
 # Blockchain (Base Sepolia testnet for development)
@@ -123,14 +156,24 @@ TERMINAL_ID=terminal_001
 
 ## Payment Flow Implementation
 
-### Week 1-2: Simple USDC Transfers
+### Current Status: Hardware Testing Complete
+
+The NFC hardware layer is working and tested with `test/card-emulation-hybrid.py`. This script demonstrates:
+- PN532 initialization with Adafruit library
+- ISO-DEP card emulation with raw PN532 commands
+- NDEF message creation and transmission
+- Phone tap detection and APDU command handling
+
+**Next step:** Build the Node.js terminal layer that creates signed payment requests and spawns the Python NFC bridge.
+
+### Week 1-2: Simple USDC Transfers (PLANNED)
 
 ```javascript
-// terminal/src/payment.js
+// When terminal/src/ is created:
 1. Merchant creates payment request (amount, merchant address)
 2. Sign with EIP-712 (merchant wallet)
 3. Encode as JSON payload
-4. Send to Python NFC bridge via IPC
+4. Send to Python NFC bridge via IPC (use card-emulation-hybrid.py as base)
 5. Python writes NDEF message to NFC tag emulation
 6. Customer taps phone → reads NFC
 7. Customer app verifies signature, generates MetaMask deep link
@@ -139,7 +182,7 @@ TERMINAL_ID=terminal_001
 10. Display confirmation (<10 seconds total)
 ```
 
-### Week 3: Commerce Payments Escrow
+### Week 3: Commerce Payments Escrow (PLANNED)
 
 ```javascript
 // Enhanced flow with escrow contract
@@ -198,6 +241,114 @@ time.sleep(0.2)   # Signal stabilization
 
 **Wiring:** TX/RX must cross (Module TX → Converter RX, Module RX → Converter TX)
 
+### Production Approach: Tag Writing (NOT Card Emulation)
+
+**CRITICAL FINDING (Week 2):** After extensive testing, card emulation is **NOT VIABLE** for FastPay Phase 1. The production approach uses **physical NFC tag writing**.
+
+**Why Card Emulation Doesn't Work:**
+- ❌ Adafruit PN532 library doesn't expose card emulation methods
+- ❌ nfcpy card emulation doesn't work with PN532 over UART
+- ❌ Raw PN532 commands (TgInitAsTarget) require complex APDU protocol handling
+- ❌ Hardware/firmware compatibility issues prevent reliable phone tap detection
+
+**Production Solution: Tag Writing**
+✅ PN532 acts as **reader/writer** (not emulated tag)
+✅ Write payment request to **physical rewritable NFC tag** (NTAG213/215/216)
+✅ Customer taps phone on physical tag to read payment
+✅ Rewrite same tag for next transaction
+
+**Implementation (`test/write-payment-tag.py`):**
+```python
+from adafruit_pn532.uart import PN532_UART
+
+# Initialize PN532
+uart = serial.Serial(PORT, 115200, timeout=1)
+uart.dtr = False
+uart.rts = False
+pn532 = PN532_UART(uart, debug=False)
+pn532.SAM_configuration()
+
+# Create NDEF Text Record
+payment_json = json.dumps(payment, separators=(',', ':'))
+ndef_record = create_ndef_text_record(payment_json)
+
+# Wait for tag
+uid = pn532.read_passive_target(timeout=10)
+
+# Write NDEF message to tag (NTAG213/215/216)
+# Page 4: Capability Container
+pn532.ntag2xx_write_block(4, bytes([0xE1, 0x10, 0x12, 0x00]))
+
+# Pages 5+: NDEF TLV structure
+ndef_tlv = bytearray([0x03, len(ndef_record)]) + ndef_record + bytearray([0xFE])
+page = 5
+for i in range(0, len(ndef_tlv), 4):
+    chunk = ndef_tlv[i:i+4].ljust(4, b'\x00')
+    pn532.ntag2xx_write_block(page, chunk)
+    page += 1
+```
+
+**Hardware Required:**
+- **NTAG213**: 144 bytes usable (~$8 for 10 tags on Amazon)
+- **NTAG215**: 504 bytes usable (~$10 for 10 tags) ← RECOMMENDED
+- **NTAG216**: 888 bytes usable (~$12 for 10 tags)
+- Search: "NTAG215 NFC stickers" or "NFC tags blank NTAG"
+
+**Key Advantages:**
+- Fast write: <2 seconds per transaction
+- Unlimited rewrites (same tag for all customers)
+- Works with existing Adafruit library (no custom protocols)
+- Reliable - no card emulation complexity
+
+### ISO-DEP APDU Protocol
+
+When the terminal emulates an NFC Type 4 Tag, phones communicate using ISO-DEP APDU commands:
+
+**APDU Command Structure:**
+```
+[CLA] [INS] [P1] [P2] [Lc] [Data] [Le]
+```
+
+**Key Commands:**
+
+1. **SELECT (INS=0xA4)** - Select application or file
+   ```
+   Command:  00 A4 04 00 07 D2760000850101 00
+   Response: 90 00  (success)
+   ```
+
+2. **READ BINARY (INS=0xB0)** - Read file contents
+   ```
+   Command:  00 B0 00 00 20  (read 32 bytes from offset 0)
+   Response: [NDEF data...] 90 00
+   ```
+
+3. **UPDATE BINARY (INS=0xD6)** - Write file contents (not used in our read-only flow)
+
+**Response Status Codes:**
+- `90 00` - Success
+- `6A 82` - File not found / command not supported
+- `6A 86` - Incorrect parameters
+- `67 00` - Wrong length
+
+**Implementation in card-emulation-raw.py:**
+```python
+while session_active:
+    cmd = tg_get_data(ser)  # Receive APDU from phone
+
+    if cmd[1] == 0xA4:  # SELECT
+        tg_set_data(ser, bytes([0x90, 0x00]))
+    elif cmd[1] == 0xB0:  # READ BINARY
+        offset = (cmd[2] << 8) | cmd[3]
+        length = cmd[4]
+        data = ndef_message[offset:offset+length]
+        tg_set_data(ser, data + bytes([0x90, 0x00]))
+    else:
+        tg_set_data(ser, bytes([0x6A, 0x82]))  # Not supported
+```
+
+**Why this matters:** Understanding ISO-DEP is critical for debugging NFC issues. If phones can't read the terminal, check APDU command/response flow.
+
 ## Blockchain Integration (Base L2)
 
 ### Network Details
@@ -241,14 +392,37 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
 ## Phase Roadmap
 
 ### Phase 1 (Weeks 1-4): POC Validation
-- **Week 1-2:** Desktop dev → NFC hardware + simple USDC transfers
-- **Week 3:** Integrate Commerce Payments escrow protocol
-- **Week 4:** Raspberry Pi migration + merchant pilot prep
+
+**Week 1 Status: ✅ COMPLETE**
+- ✅ Hardware setup (PN532 + FT232 USB-UART)
+- ✅ NFC communication working (Adafruit library)
+- ✅ Card emulation tested (`test/card-emulation-hybrid.py`)
+- ✅ Phone tap detection verified
+- ✅ NDEF message creation working
+
+**Week 2: NOW - Build Terminal Software**
+- [ ] Create `terminal/` directory structure
+- [ ] Implement Node.js payment request creation (EIP-712 signing)
+- [ ] Copy `test/card-emulation-hybrid.py` → `terminal/scripts/nfc_bridge.py`
+- [ ] Add IPC between Node.js and Python (stdin/stdout JSON)
+- [ ] Test end-to-end: payment request → NFC → phone reads
+
+**Week 3: Commerce Payments Integration**
+- [ ] Integrate Commerce Payments escrow protocol
+- [ ] Deploy test contracts to Base Sepolia
+- [ ] Update payment schema with escrow fields
+- [ ] Implement blockchain monitoring for DepositEvent
+
+**Week 4: Raspberry Pi Migration**
+- [ ] Test on Raspberry Pi (change `NFC_PORT` to `/dev/ttyAMA0`)
+- [ ] Create systemd service for terminal auto-start
+- [ ] Merchant pilot preparation
+- [ ] Video demo for stakeholder validation
 
 **Success Criteria:**
 - End-to-end payment in <10 seconds
 - NFC read reliability >95%
-- Video demo for stakeholder validation
+- Works on both macOS desktop and Raspberry Pi
 
 ### Phase 2+ (Deferred Features)
 - EIP-4337 gas sponsorship (merchant pays gas)
@@ -272,13 +446,38 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
 - `@coinbase/commerce-payments` - Escrow protocol
 - `hardhat` - Contract testing and deployment
 
-## Common Issues
+## Common Issues and Solutions
 
-1. **"No module named 'adafruit_pn532'"**: Run `pip3 install adafruit-circuitpython-pn532`
-2. **Module not responding**: Set `uart.dtr = False` and `uart.rts = False` after opening port
-3. **TX/RX crossover**: Module TX → Converter RX, Module RX → Converter TX
-4. **Serial permissions (Linux)**: Add user to dialout group or use sudo
-5. **Card emulation**: Adafruit library doesn't support TgInitAsTarget - use raw PN532 commands
+1. **"No module named 'adafruit_pn532'"**
+   ```bash
+   pip3 install adafruit-circuitpython-pn532 --break-system-packages
+   ```
+
+2. **Module not responding / timeout errors**
+   - Power cycle: Unplug USB, wait 5 seconds, replug
+   - Verify DTR/RTS are set LOW: `uart.dtr = False` and `uart.rts = False`
+   - Check serial port: `ls /dev/tty.usbserial*` should show your device
+   - Run diagnostic: `python3 test/test-adafruit-pn532.py`
+
+3. **Phone can't read NFC tag**
+   - Verify card emulation is running: `python3 test/card-emulation-hybrid.py`
+   - Check ISO-DEP APDU responses in debug output
+   - Ensure NDEF message is properly formatted (see `create_ndef_text()` in test scripts)
+   - Try different phone positions/angles on module
+
+4. **TX/RX wiring issues**
+   - Module TX → Converter RX (crossover required)
+   - Module RX → Converter TX (crossover required)
+   - See `test/SETUP-SUCCESS.md` for verified wiring diagram
+
+5. **Serial port permissions (Linux/Raspberry Pi)**
+   - Add user to dialout group: `sudo usermod -a -G dialout $USER`
+   - Or use sudo: `sudo python3 test/test-adafruit-pn532.py`
+
+6. **Port changed after reboot**
+   - USB-UART adapters may enumerate differently
+   - Find new port: `ls /dev/tty.usbserial*` or `ls /dev/ttyUSB*`
+   - Update `PORT` variable in test scripts
 
 ## References
 
