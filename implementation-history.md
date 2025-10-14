@@ -200,13 +200,13 @@ Payload: 0x02 + 'en' (language) + JSON text
 
 ---
 
-## Phase 1: Card Emulation Implementation (Oct 8, 2025)
+## Phase 1: Card Emulation Investigation (Oct 8, 2025)
 
-### Context Switch: Terminal as NFC Tag
+### Context: Exploring NFC Approaches
 
-**User Request:** "Write a test that acts like a tag phone can read"
+**Initial Exploration:** Testing card emulation as potential approach for NFC communication
 
-**Realization:** FastPay production approach doesn't need physical tags. Terminal becomes the NFC tag via card emulation.
+**Finding:** After extensive testing, card emulation is not viable for FastPay production. See Phase 1 conclusion below.
 
 ### Attempt 1: Adafruit Library (`card-emulation-simple.py`)
 
@@ -342,22 +342,24 @@ while True:
 
 **Solution:** Hybrid approach - Use library for initialization, raw commands for card emulation
 
-### Why Card Emulation (Not Physical Tags)
+### Architecture Decision: Reader Mode (Not Card Emulation)
 
-**Decision:** Terminal acts as NFC tag via card emulation
+**Decision:** PN532 acts as reader to detect phone taps, payment data flows via Coinbase Commerce API
 
 **Rationale:**
-- No physical tag inventory needed
-- Dynamic payment requests (different amount each tap)
-- Lower cost (no consumables)
-- Faster iteration (no tag writing delays)
-- Production approach matches credit card terminals
+- Customer needs internet to broadcast to Base L2 blockchain anyway
+- Coinbase Commerce provides proven hosted checkout
+- No card emulation complexity (UART timing issues)
+- No physical tags needed
+- Tap just provides UX convenience (alternative to QR scan)
+- Scalable to high transaction volume
 
 **Implementation:**
-- PN532 emulates ISO14443-4 Type 4 Tag
-- Responds to phone's APDU commands
-- Serves NDEF message with payment request
-- Session-based (new data each tap)
+- PN532 in reader mode detects ISO14443A devices
+- Extracts UID from tapped phone
+- Associates tap with pending Coinbase Commerce charge
+- Customer completes payment via hosted checkout
+- Webhook confirms payment to terminal
 
 ### DTR/RTS Control Lines
 
@@ -381,8 +383,7 @@ while True:
 ### Working Scripts (Production-Ready)
 
 - **test-adafruit-pn532.py** - Firmware detection and SAM configuration
-- **detect-phone-tap.py** - Phone tap detection and UID reading
-- **card-emulation-raw.py** - Full card emulation with NDEF serving
+- **detect-phone-tap.py** - Phone tap detection and UID reading (PRODUCTION APPROACH)
 
 ### Debug/Development Scripts
 
@@ -394,14 +395,23 @@ while True:
 - **test-nfc-with-ack.py** - ACK frame handling implementation
 - **test-nfc-wakeup.py** - Wake-up sequence testing
 
-### Write Test Scripts
+### Experimental Scripts (Not Used in Production)
 
+**Card Emulation Experiments:**
+- **card-emulation-hybrid.py** - nfcpy card emulation attempt
+- **card-emulation-simple.py** - Adafruit library emulation attempt
+- **card-emulation-raw.py** - Raw PN532 command emulation attempt
+
+**Tag Writing Experiments:**
 - **write-simple-payment.py** - Raw data writing
 - **write-full-payment.py** - Complete payment request
 - **write-ndef-formatted.py** - NDEF format with CC
 - **write-ndef-smart.py** - Smart NDEF detection and writing
 - **write-payment-request.py** - Structured payment data
+- **write-payment-tag.py** - NTAG tag writing (hardware validation)
 - **write-to-tag.py** - Basic tag writing
+
+**Note:** These scripts proved the hardware works but are not used in production. FastPay uses reader mode, not card emulation or tag writing.
 
 ---
 
@@ -470,29 +480,72 @@ pn532 = PN532_UART(uart)
 
 ---
 
+## Phase 1 Conclusion: Reader Mode Architecture Selected
+
+### Final Architecture Decision (Week 2)
+
+After extensive testing of three approaches:
+1. **Card Emulation** - ❌ Not viable (PN532 over UART too slow for ISO-DEP timing)
+2. **Physical Tag Writing** - ✅ Hardware validated but not needed for production
+3. **Reader Mode** - ✅ SELECTED for production
+
+**Why Reader Mode:**
+- Customers need internet for blockchain anyway (Base L2 settlement)
+- Coinbase Commerce provides proven payment infrastructure
+- NFC tap is UX convenience (alternative to QR code)
+- No card emulation complexity
+- Scalable and reliable
+
+### Production Architecture
+
+```
+Payment Flow:
+1. Terminal creates Coinbase Commerce charge
+2. Displays QR code + "Tap to Pay" prompt
+3. PN532 reader detects phone tap (extracts UID)
+4. Associates tap with pending charge
+5. Customer opens wallet, sees charge (via QR or deep link)
+6. Customer approves transaction
+7. Broadcasts to Base L2
+8. Webhook confirms payment to terminal
+```
+
 ## Next Implementation Steps
 
-### Immediate (Week 1)
+### Week 2: Build Terminal Software
 
-1. **Test Card Emulation** - Run `card-emulation-raw.py` with phone
-2. **Verify NDEF Reading** - Confirm phone can parse payment JSON
-3. **Build React Native Test App** - Read NFC and parse EIP-712 signature
-4. **MetaMask Deep Link** - Generate pre-filled transaction URL
+1. **Create terminal/ directory structure**
+   - Node.js business logic
+   - Python NFC reader bridge
+   - IPC via stdin/stdout
 
-### Week 2-3
+2. **Coinbase Commerce Integration**
+   - Charge creation API
+   - Webhook endpoint
+   - Payment confirmation
 
-5. **Node.js Terminal** - Implement wallet.js, payment.js, nfc.js
-6. **Blockchain Monitoring** - Watch Base testnet for USDC transfers
-7. **End-to-End Flow** - Complete first payment on Base Sepolia
+3. **Reader Mode NFC Bridge**
+   - Port `detect-phone-tap.py` to production
+   - Add JSON IPC output
+   - Implement tap debouncing
 
-### Week 4
+4. **Test End-to-End Flow**
+   - Create charge → Display QR → Detect tap → Verify payment
 
-8. **Raspberry Pi Migration** - Port working code to Pi
-9. **Merchant Pilot Prep** - Packaging, documentation, demo
-10. **Video Demo** - Record end-to-end payment for stakeholders
+### Week 3: Commerce Payments Escrow (Optional)
+
+5. **Escrow Protocol Integration** - If bypassing Coinbase hosted checkout
+6. **Direct Blockchain Monitoring** - Base L2 event monitoring
+7. **Custom Contract Deployment** - Base Sepolia testnet
+
+### Week 4: Raspberry Pi & Pilot Prep
+
+8. **Raspberry Pi Migration** - Same code, change NFC_PORT
+9. **Merchant Pilot Prep** - Packaging, documentation
+10. **Video Demo** - Record end-to-end payment
 
 ---
 
 **Document Status:** Living document, updated as implementation progresses
 
-**Last Updated:** October 8, 2025
+**Last Updated:** October 14, 2025 - Architecture finalized: Reader Mode selected

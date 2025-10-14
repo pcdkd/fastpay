@@ -4,23 +4,39 @@ This file provides essential guidance to Claude Code when working with the FastP
 
 ## Quick Start - Where We Are Now
 
-**Current Status:** Week 2 of Phase 1 - Hardware testing complete, building terminal software
+**Current Status:** Week 2 of Phase 1 - Hardware validated, implementing reader mode architecture
 
 **What Works:**
 - ✅ NFC hardware (PN532 module) communicating via USB-UART
-- ✅ Card emulation with phone tap detection (`test/card-emulation-hybrid.py`)
-- ✅ NDEF message creation and transmission
-- ✅ ISO-DEP APDU protocol handling
+- ✅ Phone tap detection and UID reading (`test/detect-phone-tap.py`)
+- ✅ Reader mode fully functional with Adafruit library
+- ✅ Tag writing validates hardware works (proof of concept)
+
+**Critical Architecture Decision:**
+FastPay uses **READER MODE** - PN532 detects customer phone taps, payment data flows via API/QR.
+
+**Why Reader Mode (Not Card Emulation or Physical Tags):**
+- ✅ Merchants have reliable internet (coffee shops, retail)
+- ✅ Customer signing requires network emission (Base L2 blockchain)
+- ✅ Leverages Coinbase Commerce hosted checkout
+- ✅ No physical tag consumables or logistics
+- ✅ Fast tap detection without tag writing latency
+- ✅ Can handle high transaction volume
+
+**Card Emulation Status:**
+NOT VIABLE with PN532 over UART. See `test/CARD-EMULATION-FINDINGS.md` for technical details.
 
 **What's Next:**
-1. Create `terminal/` directory structure (doesn't exist yet)
-2. Build Node.js payment request layer (EIP-712 signing)
-3. Copy `test/card-emulation-hybrid.py` → `terminal/scripts/nfc_bridge.py`
-4. Add IPC between Node.js and Python (JSON over stdin/stdout)
-5. Test full payment flow with phone
+1. Create `terminal/` directory structure
+2. Build Node.js payment request layer (Coinbase Commerce API integration)
+3. Implement reader mode: PN532 detects tap → associates with pending charge
+4. Add IPC between Node.js and Python (stdin/stdout for tap detection)
+5. Test full payment flow: Create charge → Display QR → Detect tap → Customer pays → Confirm on-chain
 
 **Key Files to Reference:**
-- `test/card-emulation-hybrid.py` - Working NFC card emulation (PRODUCTION READY)
+- `test/detect-phone-tap.py` - WORKING: Reader mode tap detection (production ready)
+- `test/CARD-EMULATION-FINDINGS.md` - Why card emulation failed (technical investigation)
+- `test/write-payment-tag.py` - Hardware validation (proves reader/writer works)
 - `test/SETUP-SUCCESS.md` - Hardware setup and wiring
 - `test/NEXT-STEPS.md` - Detailed implementation roadmap
 - `FastPay-Phase1-ProjectDoc.md` - Complete architecture spec (gitignored but critical reference)
@@ -29,38 +45,48 @@ This file provides essential guidance to Claude Code when working with the FastP
 
 FastPay is an NFC-based cryptocurrency payment terminal that enables tap-to-pay crypto payments in under 10 seconds. The terminal inverts the traditional crypto flow from "push" (customer-initiated) to "pull" (merchant-initiated) to match credit card UX.
 
-**Current Status:** Phase 1 - Hardware setup complete, card emulation working, ready to build terminal software
+**Current Status:** Phase 1 - Hardware setup complete, reader mode validated, ready to build terminal software
 
 **Tech Stack:**
-- **Terminal:** Node.js v20.x (planned - business logic), Python 3.11+ (NFC hardware bridge)
+- **Terminal:** Node.js v20.x (business logic, Coinbase Commerce API), Python 3.11+ (NFC reader bridge)
 - **Blockchain:** Base L2, USDC token
-- **NFC Hardware:** PN532 module (UART), Adafruit CircuitPython library + raw commands for card emulation
-- **Customer App:** React Native test app (Phase 1, planned)
+- **NFC Hardware:** PN532 module (UART), Adafruit CircuitPython library in reader mode
+- **Payment Flow:** Coinbase Commerce hosted checkout (customer pays via QR or wallet app)
+- **Customer Experience:** Scan QR OR tap phone (both open same payment page)
 - **Smart Contracts:** Coinbase Commerce Payments (Week 3)
 
 ## Architecture Principles
 
-### Critical Design Pattern: Layer Separation
+### Critical Design Pattern: Reader Mode Architecture
 
-The NFC module has **ZERO blockchain awareness**. This is intentional:
+The NFC module **only detects taps** - it has ZERO payment logic. This is intentional:
 
 ```
-Layer 1: NFC COMMUNICATION
-├── Reads/writes NDEF messages via 13.56MHz radio
-├── NO understanding of blockchain, signatures, or payments
-└── Just transmits data (works on laptop, Pi, ESP32, custom PCB)
+Layer 1: NFC TAP DETECTION (Python + PN532)
+├── Continuously scans for ISO14443A devices (phones)
+├── Reports UID when device detected
+├── NO understanding of blockchain, payments, or charges
+└── Just detects physical taps (works on laptop, Pi, ESP32, custom PCB)
 
-Layer 2: BUSINESS LOGIC (Node.js)
-├── Creates payment requests
-├── Signs with merchant wallet (EIP-712)
-└── Coordinates between NFC and blockchain
+Layer 2: PAYMENT ORCHESTRATION (Node.js)
+├── Creates charges via Coinbase Commerce API
+├── Displays QR code + "Tap to Pay" prompt
+├── Receives tap events from NFC layer
+├── Associates tap UID with pending charge
+└── Monitors blockchain for payment confirmation
 
-Layer 3: BLOCKCHAIN (Base L2)
-├── Settlement layer for transactions
-└── Monitored independently of NFC activity
+Layer 3: PAYMENT PROCESSING (External)
+├── Customer wallet app (opened via QR or NFC deep link)
+├── Coinbase Commerce hosted checkout
+├── Base L2 blockchain settlement
+└── Webhook confirms payment to terminal
 ```
 
-**Why this matters:** Enables hardware versatility, testability without blockchain access, and NFC tap works even if RPC is down.
+**Why this matters:**
+- NFC layer is simple and portable (just tap detection)
+- Payment logic lives in Node.js where it's testable
+- Can swap NFC for other tap technologies (BLE, UWB)
+- Terminal works even if NFC reader disconnects (QR fallback)
 
 ### Development Approach
 
@@ -113,21 +139,38 @@ cd test
 
 # Core hardware verification (run these first)
 python3 test-adafruit-pn532.py        # Verify PN532 module responding
-python3 detect-phone-tap.py           # Test phone tap detection
+python3 detect-phone-tap.py           # ✅ PRODUCTION READY: Reader mode tap detection
 
-# Card emulation (CURRENT FOCUS)
-python3 card-emulation-hybrid.py      # Full ISO-DEP card emulation with payment request
-python3 card-emulation-simple.py      # Simplified card emulation test
-python3 card-emulation-raw.py         # Raw PN532 commands only
+# Hardware validation tests (prove reader/writer works)
+python3 write-payment-tag.py          # Validates PN532 can write to tags (not used in production)
 
-# Payment request writing
-python3 write-payment-request.py      # Write payment request to NFC tag
-python3 write-simple-payment.py       # Write simplified payment data
+# Card emulation experiments (DEPRECATED - see CARD-EMULATION-FINDINGS.md)
+# These don't work reliably with PN532+UART, kept for reference only
+# python3 card-emulation-hybrid.py
+# python3 card-emulation-simple.py
+# python3 card-emulation-raw.py
+
+# Legacy experiments (kept for reference)
+python3 write-payment-request.py      # Early tag writing experiments
+python3 write-simple-payment.py       # Simple payload tests
 
 # Advanced diagnostics
 python3 test-serial.py                # Serial port detection and verification
 python3 test-wire-quality.py          # Control signal testing (DTR/RTS)
 python3 test-baudrates.py             # Baudrate scanning
+```
+
+### Production NFC Reader Script
+
+The working reader mode script (`test/detect-phone-tap.py`) will be ported to `terminal/scripts/nfc_reader.py` with these enhancements:
+
+```python
+# Production reader features (to be implemented):
+- Continuous scanning loop
+- JSON output via stdout for Node.js IPC
+- Graceful error handling and reconnection
+- UID deduplication (ignore rapid re-taps)
+- Timeout configuration via environment variable
 ```
 
 ### Running Tests
@@ -142,45 +185,66 @@ All tests assume the PN532 module is connected to `/dev/tty.usbserial-ABSCDY4Z`.
 # NFC Hardware
 NFC_PORT=/dev/tty.usbserial-ABSCDY4Z  # macOS desktop with FT232 USB-UART
 NFC_BAUD_RATE=115200
+NFC_TAP_DEBOUNCE_MS=1000  # Ignore rapid re-taps within 1 second
 
-# Blockchain (Base Sepolia testnet for development)
-BASE_RPC_URL=https://sepolia.base.org
-CHAIN_ID=84532
-USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
+# Coinbase Commerce (get API key from https://commerce.coinbase.com/)
+COINBASE_COMMERCE_API_KEY=your_api_key_here
+COINBASE_WEBHOOK_SECRET=your_webhook_secret_here
+
+# Blockchain (Base Mainnet - Coinbase Commerce handles this)
+BASE_RPC_URL=https://mainnet.base.org  # Optional: for direct on-chain monitoring
+CHAIN_ID=8453
+USDC_ADDRESS=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 
 # Merchant
-MERCHANT_PRIVATE_KEY=0x...
 MERCHANT_NAME="Test Merchant"
 TERMINAL_ID=terminal_001
+
+# Server
+PORT=3000  # For webhook endpoint
 ```
 
 ## Payment Flow Implementation
 
-### Current Status: Hardware Testing Complete
+### Current Status: Hardware Validated, Reader Mode Ready
 
-The NFC hardware layer is working and tested with `test/card-emulation-hybrid.py`. This script demonstrates:
-- PN532 initialization with Adafruit library
-- ISO-DEP card emulation with raw PN532 commands
-- NDEF message creation and transmission
-- Phone tap detection and APDU command handling
+The NFC hardware layer is working and tested with `test/detect-phone-tap.py`. This script demonstrates:
+- PN532 initialization with Adafruit library (reader mode)
+- ISO14443A device detection (phones, payment cards)
+- UID extraction from detected devices
+- Continuous scanning with timeout handling
 
-**Next step:** Build the Node.js terminal layer that creates signed payment requests and spawns the Python NFC bridge.
+**IMPORTANT:** This is reader mode - PN532 detects taps, payment data flows via Coinbase Commerce API.
 
-### Week 1-2: Simple USDC Transfers (PLANNED)
+**Next step:** Build the Node.js terminal layer that creates charges via Coinbase Commerce and associates taps with pending charges.
+
+### Week 1-2: Simple USDC Transfers via Coinbase Commerce (PLANNED)
 
 ```javascript
 // When terminal/src/ is created:
-1. Merchant creates payment request (amount, merchant address)
-2. Sign with EIP-712 (merchant wallet)
-3. Encode as JSON payload
-4. Send to Python NFC bridge via IPC (use card-emulation-hybrid.py as base)
-5. Python writes NDEF message to NFC tag emulation
-6. Customer taps phone → reads NFC
-7. Customer app verifies signature, generates MetaMask deep link
-8. Customer approves → USDC.transfer(merchant, amount)
-9. Terminal monitors Transfer event on Base L2
-10. Display confirmation (<10 seconds total)
+1. Merchant enters sale amount in terminal
+2. Node.js creates Coinbase Commerce charge via API
+   → Returns: charge.id, charge.hosted_url, charge.addresses.base
+3. Terminal displays:
+   - QR code with charge.hosted_url
+   - "Scan QR OR Tap Phone" prompt
+4. Python NFC reader continuously scans for taps
+5. Customer taps phone → PN532 detects UID
+6. Python reports tap to Node.js via stdout (JSON IPC)
+7. Node.js associates tap UID with pending charge.id
+8. Terminal shows: "✅ Tap detected! Complete payment on your phone"
+9. Customer's wallet app opens charge.hosted_url (or was already scanned)
+10. Customer approves → USDC.transfer(charge.addresses.base, amount)
+11. Coinbase webhook fires → Node.js confirms payment
+12. Terminal monitors Base L2 for confirmation (optional, webhook is primary)
+13. Display "✅ Payment confirmed!" (<10 seconds total)
 ```
+
+**Reader Mode Workflow:**
+- NFC tap is a **convenience** alternative to QR scan
+- Both QR and tap lead to same Coinbase Commerce checkout
+- Tap provides better UX ("just tap to pay" like credit card)
+- Terminal tracks which customer paid via tap UID or webhook metadata
 
 ### Week 3: Commerce Payments Escrow (PLANNED)
 
@@ -194,30 +258,85 @@ The NFC hardware layer is working and tested with `test/card-emulation-hybrid.py
 12. After settlement window: merchant withdraws OR customer refunds
 ```
 
-## EIP-712 Payment Request Schema
+## Coinbase Commerce Integration
+
+### Charge Creation
 
 ```javascript
-// Weeks 1-2: Direct transfer
-const types = {
-  PaymentRequest: [
-    { name: "merchantAddress", type: "address" },
-    { name: "merchantName", type: "string" },
-    { name: "tokenAddress", type: "address" },  // USDC
-    { name: "amount", type: "uint256" },
-    { name: "currency", type: "string" },       // "USD"
-    { name: "fiatAmount", type: "string" },     // "5.00"
-    { name: "description", type: "string" },
-    { name: "nonce", type: "uint256" },
-    { name: "expiry", type: "uint256" },
-    { name: "terminalId", type: "string" }
-  ]
+// Week 1-2: Create charge via Coinbase Commerce API
+const commerce = require('coinbase-commerce-node');
+const Client = commerce.Client;
+
+Client.init(process.env.COINBASE_COMMERCE_API_KEY);
+
+const chargeData = {
+  name: 'Coffee Purchase',
+  description: 'Grande Latte - Terminal #001',
+  local_price: {
+    amount: '5.00',
+    currency: 'USD'
+  },
+  pricing_type: 'fixed_price',
+  metadata: {
+    terminal_id: process.env.TERMINAL_ID,
+    merchant_name: process.env.MERCHANT_NAME,
+    tap_uid: null  // Will be filled when customer taps
+  }
 };
 
-// Week 3: Add escrow fields
-// { name: "escrowContract", type: "address" },
-// { name: "paymentId", type: "bytes32" },
-// { name: "settlementWindow", type: "uint256" },
-// { name: "metadata", type: "string" }
+const charge = await Charge.create(chargeData);
+
+// Returns:
+// charge.id - unique charge identifier
+// charge.hosted_url - customer payment page
+// charge.addresses.base - Base L2 deposit address for USDC
+// charge.pricing.usdc.amount - exact USDC amount required
+```
+
+### Webhook Handling
+
+```javascript
+// Receive payment confirmations from Coinbase Commerce
+app.post('/webhooks/coinbase', (req, res) => {
+  const signature = req.headers['x-cc-webhook-signature'];
+  const isValid = Webhook.verifyEventBody(
+    req.rawBody,
+    signature,
+    process.env.COINBASE_WEBHOOK_SECRET
+  );
+
+  if (isValid) {
+    const event = req.body;
+
+    if (event.type === 'charge:confirmed') {
+      const charge = event.data;
+      console.log(`✅ Payment confirmed for charge: ${charge.id}`);
+      // Update terminal display: "Payment confirmed!"
+    }
+  }
+
+  res.sendStatus(200);
+});
+```
+
+### Alternative: Direct On-Chain Monitoring (Week 3)
+
+For merchants who want to bypass Coinbase webhooks and verify directly on-chain:
+
+```javascript
+// Monitor USDC Transfer events on Base L2
+const filter = usdcContract.filters.Transfer(
+  null,  // from: any
+  charge.addresses.base,  // to: charge deposit address
+  null   // amount: any
+);
+
+provider.on(filter, async (event) => {
+  const amount = ethers.formatUnits(event.args.value, 6);  // USDC has 6 decimals
+  console.log(`✅ Received ${amount} USDC at ${charge.addresses.base}`);
+  // Verify amount matches charge.pricing.usdc.amount
+  // Update terminal display
+});
 ```
 
 ## NFC Hardware Integration
@@ -241,113 +360,68 @@ time.sleep(0.2)   # Signal stabilization
 
 **Wiring:** TX/RX must cross (Module TX → Converter RX, Module RX → Converter TX)
 
-### Production Approach: Tag Writing (NOT Card Emulation)
+### Production Approach: Reader Mode
 
-**CRITICAL FINDING (Week 2):** After extensive testing, card emulation is **NOT VIABLE** for FastPay Phase 1. The production approach uses **physical NFC tag writing**.
+**CRITICAL DECISION (Week 2):** FastPay uses **reader mode** - PN532 detects customer phone taps.
 
-**Why Card Emulation Doesn't Work:**
-- ❌ Adafruit PN532 library doesn't expose card emulation methods
-- ❌ nfcpy card emulation doesn't work with PN532 over UART
-- ❌ Raw PN532 commands (TgInitAsTarget) require complex APDU protocol handling
-- ❌ Hardware/firmware compatibility issues prevent reliable phone tap detection
+**Why Reader Mode:**
+- ✅ Merchants have reliable internet (coffee shops, retail stores)
+- ✅ No physical NFC tags or consumables needed
+- ✅ Customer signing requires network emission (Base L2 blockchain)
+- ✅ Leverages Coinbase Commerce's proven hosted checkout
+- ✅ Faster transaction flow (no tag writing latency)
+- ✅ Scales to high transaction volume
 
-**Production Solution: Tag Writing**
-✅ PN532 acts as **reader/writer** (not emulated tag)
-✅ Write payment request to **physical rewritable NFC tag** (NTAG213/215/216)
-✅ Customer taps phone on physical tag to read payment
-✅ Rewrite same tag for next transaction
+**Why Card Emulation Failed:**
+See `test/CARD-EMULATION-FINDINGS.md` for detailed investigation report. Summary:
+- ❌ PN532 over UART too slow for ISO-DEP card emulation timing requirements
+- ❌ Adafruit library doesn't expose card emulation methods
+- ❌ Complex APDU protocol implementation required
+- ❌ IRQ pin handling critical (not exposed via USB-UART)
 
-**Implementation (`test/write-payment-tag.py`):**
+**Production Solution: Reader Mode**
+1. PN532 continuously scans for ISO14443A devices (phones, payment cards)
+2. When device detected, extract UID
+3. Report tap to Node.js terminal via IPC
+4. Terminal associates tap with pending Coinbase Commerce charge
+5. Customer completes payment via Coinbase hosted checkout
+6. Webhook confirms payment
+
+**Implementation (`test/detect-phone-tap.py` - production ready):**
 ```python
 from adafruit_pn532.uart import PN532_UART
 
-# Initialize PN532
+# Initialize PN532 in reader mode
 uart = serial.Serial(PORT, 115200, timeout=1)
 uart.dtr = False
 uart.rts = False
 pn532 = PN532_UART(uart, debug=False)
 pn532.SAM_configuration()
 
-# Create NDEF Text Record
-payment_json = json.dumps(payment, separators=(',', ':'))
-ndef_record = create_ndef_text_record(payment_json)
+print("Waiting for tap...")
+tap_count = 0
 
-# Wait for tag
-uid = pn532.read_passive_target(timeout=10)
+while True:
+    # Continuously scan for ISO14443A devices
+    uid = pn532.read_passive_target(timeout=0.5)
 
-# Write NDEF message to tag (NTAG213/215/216)
-# Page 4: Capability Container
-pn532.ntag2xx_write_block(4, bytes([0xE1, 0x10, 0x12, 0x00]))
+    if uid:
+        tap_count += 1
+        uid_hex = ''.join([f'{b:02X}' for b in uid])
+        print(f"Tap #{tap_count}: UID={uid_hex}")
 
-# Pages 5+: NDEF TLV structure
-ndef_tlv = bytearray([0x03, len(ndef_record)]) + ndef_record + bytearray([0xFE])
-page = 5
-for i in range(0, len(ndef_tlv), 4):
-    chunk = ndef_tlv[i:i+4].ljust(4, b'\x00')
-    pn532.ntag2xx_write_block(page, chunk)
-    page += 1
+        # In production: output JSON to stdout for Node.js
+        # print(json.dumps({"event": "tap", "uid": uid_hex}))
+
+        time.sleep(1)  # Debounce (ignore rapid re-taps)
 ```
-
-**Hardware Required:**
-- **NTAG213**: 144 bytes usable (~$8 for 10 tags on Amazon)
-- **NTAG215**: 504 bytes usable (~$10 for 10 tags) ← RECOMMENDED
-- **NTAG216**: 888 bytes usable (~$12 for 10 tags)
-- Search: "NTAG215 NFC stickers" or "NFC tags blank NTAG"
 
 **Key Advantages:**
-- Fast write: <2 seconds per transaction
-- Unlimited rewrites (same tag for all customers)
-- Works with existing Adafruit library (no custom protocols)
-- Reliable - no card emulation complexity
-
-### ISO-DEP APDU Protocol
-
-When the terminal emulates an NFC Type 4 Tag, phones communicate using ISO-DEP APDU commands:
-
-**APDU Command Structure:**
-```
-[CLA] [INS] [P1] [P2] [Lc] [Data] [Le]
-```
-
-**Key Commands:**
-
-1. **SELECT (INS=0xA4)** - Select application or file
-   ```
-   Command:  00 A4 04 00 07 D2760000850101 00
-   Response: 90 00  (success)
-   ```
-
-2. **READ BINARY (INS=0xB0)** - Read file contents
-   ```
-   Command:  00 B0 00 00 20  (read 32 bytes from offset 0)
-   Response: [NDEF data...] 90 00
-   ```
-
-3. **UPDATE BINARY (INS=0xD6)** - Write file contents (not used in our read-only flow)
-
-**Response Status Codes:**
-- `90 00` - Success
-- `6A 82` - File not found / command not supported
-- `6A 86` - Incorrect parameters
-- `67 00` - Wrong length
-
-**Implementation in card-emulation-raw.py:**
-```python
-while session_active:
-    cmd = tg_get_data(ser)  # Receive APDU from phone
-
-    if cmd[1] == 0xA4:  # SELECT
-        tg_set_data(ser, bytes([0x90, 0x00]))
-    elif cmd[1] == 0xB0:  # READ BINARY
-        offset = (cmd[2] << 8) | cmd[3]
-        length = cmd[4]
-        data = ndef_message[offset:offset+length]
-        tg_set_data(ser, data + bytes([0x90, 0x00]))
-    else:
-        tg_set_data(ser, bytes([0x6A, 0x82]))  # Not supported
-```
-
-**Why this matters:** Understanding ISO-DEP is critical for debugging NFC issues. If phones can't read the terminal, check APDU command/response flow.
+- Instant tap detection (<100ms)
+- No physical consumables
+- Works with any NFC-enabled phone
+- Simple integration (just detect and report)
+- No NDEF formatting complexity
 
 ## Blockchain Integration (Base L2)
 
@@ -396,16 +470,19 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
 **Week 1 Status: ✅ COMPLETE**
 - ✅ Hardware setup (PN532 + FT232 USB-UART)
 - ✅ NFC communication working (Adafruit library)
-- ✅ Card emulation tested (`test/card-emulation-hybrid.py`)
-- ✅ Phone tap detection verified
-- ✅ NDEF message creation working
+- ✅ Tag writing tested (`test/write-payment-tag.py`)
+- ✅ Phone tap detection verified (reader mode)
+- ✅ NDEF message creation and TLV formatting working
+- ✅ Card emulation investigated (not viable for PN532+UART)
 
 **Week 2: NOW - Build Terminal Software**
 - [ ] Create `terminal/` directory structure
-- [ ] Implement Node.js payment request creation (EIP-712 signing)
-- [ ] Copy `test/card-emulation-hybrid.py` → `terminal/scripts/nfc_bridge.py`
+- [ ] Set up Coinbase Commerce API integration (charge creation)
+- [ ] Port `test/detect-phone-tap.py` → `terminal/scripts/nfc_reader.py`
 - [ ] Add IPC between Node.js and Python (stdin/stdout JSON)
-- [ ] Test end-to-end: payment request → NFC → phone reads
+- [ ] Implement charge → tap association logic
+- [ ] Set up webhook endpoint for payment confirmations
+- [ ] Test end-to-end: Create charge → Display QR → Detect tap → Verify payment
 
 **Week 3: Commerce Payments Integration**
 - [ ] Integrate Commerce Payments escrow protocol
@@ -432,18 +509,24 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
 
 ## Key Dependencies
 
-### Terminal
-- `ethers@^6.x` - Blockchain interaction, EIP-712 signing
-- `serialport` (Node.js) or `pyserial` (Python) - UART communication
-- `dotenv` - Environment configuration
+### Terminal (Node.js)
+- `coinbase-commerce-node@^1.0.4` - Coinbase Commerce API client
+- `express@^4.18` - Webhook server
+- `dotenv@^16` - Environment configuration
+- `qrcode@^1.5` - QR code generation for charge URLs
+- `ethers@^6.x` - Optional: Direct blockchain monitoring
 
-### Customer App
-- `react-native-nfc-manager` - NFC tag reading
-- `@ethersproject/wallet` - Signature verification
-- `react-native-deeplinking` - MetaMask deep links
+### NFC Reader (Python)
+- `adafruit-circuitpython-pn532` - PN532 reader mode
+- `pyserial` - UART communication
 
-### Contracts (Week 3)
-- `@coinbase/commerce-payments` - Escrow protocol
+### Customer Experience
+- Customer uses **existing wallet app** (MetaMask, Coinbase Wallet, etc.)
+- Wallet opens Coinbase Commerce hosted checkout
+- No custom app needed for Phase 1
+
+### Contracts (Week 3 - Optional)
+- `@coinbase/commerce-payments` - Escrow protocol (if bypassing Coinbase hosted checkout)
 - `hardhat` - Contract testing and deployment
 
 ## Common Issues and Solutions
@@ -459,11 +542,13 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
    - Check serial port: `ls /dev/tty.usbserial*` should show your device
    - Run diagnostic: `python3 test/test-adafruit-pn532.py`
 
-3. **Phone can't read NFC tag**
-   - Verify card emulation is running: `python3 test/card-emulation-hybrid.py`
-   - Check ISO-DEP APDU responses in debug output
-   - Ensure NDEF message is properly formatted (see `create_ndef_text()` in test scripts)
-   - Try different phone positions/angles on module
+3. **PN532 not detecting phone taps**
+   - Verify phone NFC is enabled (Android: Settings → Connected devices)
+   - Run `python3 test/detect-phone-tap.py` to test hardware
+   - Ensure phone is placed flat on PN532 module (not just near it)
+   - Some phone cases block NFC - try without case
+   - Reader range is ~3-5cm, phone must be very close
+   - iOS phones only activate NFC when scanning (not passive like Android)
 
 4. **TX/RX wiring issues**
    - Module TX → Converter RX (crossover required)
@@ -479,9 +564,19 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
    - Find new port: `ls /dev/tty.usbserial*` or `ls /dev/ttyUSB*`
    - Update `PORT` variable in test scripts
 
+7. **Tap detection working but payment not completing**
+   - Check Coinbase Commerce webhook is configured correctly
+   - Verify charge.hosted_url is accessible (test in browser)
+   - Ensure customer's wallet app supports Base L2
+   - Check for sufficient USDC balance in customer wallet
+   - Review Coinbase Commerce dashboard for charge status
+
 ## References
 
 - **implementation-history.md** - Detailed debugging, hardware setup, implementation decisions
-- **FastPay-Phase1-ProjectDoc.md** - Complete architectural specification (local only)
+- **test/CARD-EMULATION-FINDINGS.md** - Investigation report: why card emulation failed, why tags work
+- **test/SETUP-SUCCESS.md** - Verified hardware wiring and configuration
+- **test/NEXT-STEPS.md** - Development roadmap and next tasks
+- **FastPay-Phase1-ProjectDoc.md** - Complete architectural specification (gitignored, local only)
 - **README.md** - Project overview and roadmap
-- **test/** - Working hardware test scripts and setup documentation
+- **test/** - Working hardware test scripts
