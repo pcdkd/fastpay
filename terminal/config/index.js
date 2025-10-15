@@ -11,49 +11,48 @@ dotenv.config();
 function detectPlatform() {
   const os = platform();
 
-  if (os === 'darwin') {
-    // macOS - USB-to-UART converter (no default, must be explicitly set)
-    return {
-      platform: 'macOS',
-      defaultPort: null,
-      needsDtrRtsFix: true,
-    };
-  }
-
-  if (os === 'linux') {
-    if (existsSync('/dev/ttyAMA0')) {
-      // Raspberry Pi - GPIO UART
+  switch (os) {
+    case 'darwin':
+      // macOS - USB-to-UART converter (no default, must be explicitly set)
       return {
-        platform: 'Raspberry Pi',
-        defaultPort: '/dev/ttyAMA0',
-        needsDtrRtsFix: false,
-      };
-    }
-    if (existsSync('/dev/ttyUSB0')) {
-      // Linux - USB-to-UART converter
-      return {
-        platform: 'Linux',
-        defaultPort: '/dev/ttyUSB0',
+        platform: 'macOS',
+        defaultPort: null,
         needsDtrRtsFix: true,
       };
-    }
-  }
 
-  // Fallback for unknown platforms or Linux without a detected port
-  return {
-    platform: 'Unknown',
-    defaultPort: null,
-    needsDtrRtsFix: true,
-  };
+    case 'linux':
+      if (existsSync('/dev/ttyAMA0')) {
+        // Raspberry Pi - GPIO UART
+        return {
+          platform: 'Raspberry Pi',
+          defaultPort: '/dev/ttyAMA0',
+          needsDtrRtsFix: false,
+        };
+      }
+      // Generic Linux - USB-to-UART or no port detected
+      return {
+        platform: 'Linux',
+        defaultPort: existsSync('/dev/ttyUSB0') ? '/dev/ttyUSB0' : null,
+        needsDtrRtsFix: true,
+      };
+
+    default:
+      // Fallback for other unknown platforms
+      return {
+        platform: 'Unknown',
+        defaultPort: null,
+        needsDtrRtsFix: true,
+      };
+  }
 }
 
 /**
  * Validate integer is within acceptable range
  */
 function validateInteger(value, name, min, max) {
-  if (isNaN(value) || value < min || value > max) {
+  if (!Number.isInteger(value) || value < min || value > max) {
     throw new Error(
-      `Invalid ${name}: ${value}. Must be between ${min} and ${max}.`
+      `Invalid ${name}: ${value}. Must be an integer between ${min} and ${max}.`
     );
   }
   return value;
@@ -128,9 +127,24 @@ const port = validateInteger(
   1,
   65535
 );
+const chainId = process.env.CHAIN_ID
+  ? validateInteger(parseInt(process.env.CHAIN_ID, 10), 'CHAIN_ID', 1, 2147483647)
+  : 8453;
 
 // Validate NFC port is configured
 validateNfcPort(nfcPort, platformInfo.platform);
+
+// Extract all configuration values
+const coinbaseApiKey = process.env.COINBASE_COMMERCE_API_KEY;
+const webhookSecret = process.env.COINBASE_WEBHOOK_SECRET;
+const merchantName = process.env.MERCHANT_NAME;
+const terminalId = process.env.TERMINAL_ID;
+const nodeEnv = process.env.NODE_ENV || 'development';
+const baseRpcUrl = process.env.BASE_RPC_URL;
+
+// Constants for blockchain (Phase 2)
+const DEFAULT_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+const usdcAddress = process.env.USDC_ADDRESS || DEFAULT_USDC_ADDRESS;
 
 // Export configuration
 const config = {
@@ -144,21 +158,21 @@ const config = {
   needsDtrRtsFix: platformInfo.needsDtrRtsFix,
 
   // Coinbase Commerce
-  coinbaseApiKey: process.env.COINBASE_COMMERCE_API_KEY,
-  webhookSecret: process.env.COINBASE_WEBHOOK_SECRET,
+  coinbaseApiKey,
+  webhookSecret,
 
   // Merchant
-  merchantName: process.env.MERCHANT_NAME,
-  terminalId: process.env.TERMINAL_ID,
+  merchantName,
+  terminalId,
 
   // Server
   port,
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv,
 
   // Optional: Blockchain (Phase 2)
-  baseRpcUrl: process.env.BASE_RPC_URL,
-  chainId: process.env.CHAIN_ID ? parseInt(process.env.CHAIN_ID, 10) : 8453,
-  usdcAddress: process.env.USDC_ADDRESS || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  baseRpcUrl,
+  chainId,
+  usdcAddress,
 };
 
 // Log configuration (hide sensitive values)
@@ -172,6 +186,7 @@ if (config.nodeEnv === 'development') {
   console.log(`   Terminal ID: ${config.terminalId}`);
   console.log(`   Webhook Port: ${config.port}`);
   console.log(`   Coinbase API Key: ********`);
+  console.log(`   Webhook Secret: ********`);
   console.log('');
 }
 
