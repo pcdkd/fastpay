@@ -12,10 +12,10 @@ function detectPlatform() {
   const os = platform();
 
   if (os === 'darwin') {
-    // macOS - USB-to-UART converter
+    // macOS - USB-to-UART converter (no default, must be explicitly set)
     return {
       platform: 'macOS',
-      defaultPort: '/dev/tty.usbserial-ABSCDY4Z',
+      defaultPort: null,
       needsDtrRtsFix: true,
     };
   }
@@ -48,6 +48,18 @@ function detectPlatform() {
 }
 
 /**
+ * Validate integer is within acceptable range
+ */
+function validateInteger(value, name, min, max) {
+  if (isNaN(value) || value < min || value > max) {
+    throw new Error(
+      `Invalid ${name}: ${value}. Must be between ${min} and ${max}.`
+    );
+  }
+  return value;
+}
+
+/**
  * Validate required environment variables
  */
 function validateEnv() {
@@ -61,12 +73,32 @@ function validateEnv() {
   const missing = required.filter((varName) => !process.env[varName]);
 
   if (missing.length > 0) {
-    console.error('❌ Missing required environment variables:');
-    for (const varName of missing) {
-      console.error(`   - ${varName}`);
-    }
-    console.error('\nPlease check your .env file. See .env.example for reference.');
-    process.exit(1);
+    const errorLines = [
+      '❌ Missing required environment variables:',
+      ...missing.map((varName) => `   - ${varName}`),
+      '\nPlease check your .env file. See .env.example for reference.',
+    ];
+    throw new Error(errorLines.join('\n'));
+  }
+}
+
+/**
+ * Validate NFC port is configured
+ */
+function validateNfcPort(port, platformName) {
+  if (!port) {
+    const errorLines = [
+      '⚠️  NFC_PORT not configured in .env',
+      '   Please set NFC_PORT to your serial device path',
+      '',
+      '   Examples:',
+      '   - macOS: NFC_PORT=/dev/tty.usbserial-ABSCDY4Z',
+      '   - Raspberry Pi: NFC_PORT=/dev/ttyAMA0',
+      '   - Linux: NFC_PORT=/dev/ttyUSB0',
+      '',
+      `   Detected platform: ${platformName}`,
+    ];
+    throw new Error(errorLines.join('\n'));
   }
 }
 
@@ -76,15 +108,39 @@ const platformInfo = detectPlatform();
 // Validate environment
 validateEnv();
 
+// Parse and validate configuration values
+const nfcPort = process.env.NFC_PORT || platformInfo.defaultPort;
+const nfcBaudRate = validateInteger(
+  parseInt(process.env.NFC_BAUD_RATE || '115200', 10),
+  'NFC_BAUD_RATE',
+  9600,
+  921600
+);
+const tapDebounceMs = validateInteger(
+  parseInt(process.env.NFC_TAP_DEBOUNCE_MS || '1000', 10),
+  'NFC_TAP_DEBOUNCE_MS',
+  100,
+  10000
+);
+const port = validateInteger(
+  parseInt(process.env.PORT || '3000', 10),
+  'PORT',
+  1,
+  65535
+);
+
+// Validate NFC port is configured
+validateNfcPort(nfcPort, platformInfo.platform);
+
 // Export configuration
 const config = {
   // Platform
   platform: platformInfo.platform,
 
   // NFC Hardware
-  nfcPort: process.env.NFC_PORT || platformInfo.defaultPort,
-  nfcBaudRate: parseInt(process.env.NFC_BAUD_RATE || '115200', 10),
-  tapDebounceMs: parseInt(process.env.NFC_TAP_DEBOUNCE_MS || '1000', 10),
+  nfcPort,
+  nfcBaudRate,
+  tapDebounceMs,
   needsDtrRtsFix: platformInfo.needsDtrRtsFix,
 
   // Coinbase Commerce
@@ -96,7 +152,7 @@ const config = {
   terminalId: process.env.TERMINAL_ID,
 
   // Server
-  port: parseInt(process.env.PORT || '3000', 10),
+  port,
   nodeEnv: process.env.NODE_ENV || 'development',
 
   // Optional: Blockchain (Phase 2)
@@ -105,19 +161,13 @@ const config = {
   usdcAddress: process.env.USDC_ADDRESS || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 };
 
-// Warn if NFC port is not configured
-if (!config.nfcPort) {
-  console.warn('⚠️  NFC_PORT not configured in .env');
-  console.warn('   Please set NFC_PORT to your serial device path');
-  console.warn('   Example: NFC_PORT=/dev/tty.usbserial-ABSCDY4Z');
-  process.exit(1);
-}
-
 // Log configuration (hide sensitive values)
 if (config.nodeEnv === 'development') {
   console.log('\n📋 Configuration:');
   console.log(`   Platform: ${config.platform}`);
   console.log(`   NFC Port: ${config.nfcPort}`);
+  console.log(`   NFC Baud Rate: ${config.nfcBaudRate}`);
+  console.log(`   Tap Debounce: ${config.tapDebounceMs}ms`);
   console.log(`   Merchant: ${config.merchantName}`);
   console.log(`   Terminal ID: ${config.terminalId}`);
   console.log(`   Webhook Port: ${config.port}`);
