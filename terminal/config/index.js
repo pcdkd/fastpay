@@ -18,27 +18,33 @@ function detectPlatform() {
       defaultPort: '/dev/tty.usbserial-ABSCDY4Z',
       needsDtrRtsFix: true,
     };
-  } else if (existsSync('/dev/ttyAMA0')) {
-    // Raspberry Pi - GPIO UART
-    return {
-      platform: 'Raspberry Pi',
-      defaultPort: '/dev/ttyAMA0',
-      needsDtrRtsFix: false,
-    };
-  } else if (existsSync('/dev/ttyUSB0')) {
-    // Linux - USB-to-UART converter
-    return {
-      platform: 'Linux',
-      defaultPort: '/dev/ttyUSB0',
-      needsDtrRtsFix: true,
-    };
-  } else {
-    return {
-      platform: 'Unknown',
-      defaultPort: null,
-      needsDtrRtsFix: true,
-    };
   }
+
+  if (os === 'linux') {
+    if (existsSync('/dev/ttyAMA0')) {
+      // Raspberry Pi - GPIO UART
+      return {
+        platform: 'Raspberry Pi',
+        defaultPort: '/dev/ttyAMA0',
+        needsDtrRtsFix: false,
+      };
+    }
+    if (existsSync('/dev/ttyUSB0')) {
+      // Linux - USB-to-UART converter
+      return {
+        platform: 'Linux',
+        defaultPort: '/dev/ttyUSB0',
+        needsDtrRtsFix: true,
+      };
+    }
+  }
+
+  // Fallback for unknown platforms or Linux without a detected port
+  return {
+    platform: 'Unknown',
+    defaultPort: null,
+    needsDtrRtsFix: true,
+  };
 }
 
 /**
@@ -52,13 +58,7 @@ function validateEnv() {
     'TERMINAL_ID',
   ];
 
-  const missing = [];
-
-  for (const varName of required) {
-    if (!process.env[varName]) {
-      missing.push(varName);
-    }
-  }
+  const missing = required.filter((varName) => !process.env[varName]);
 
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:');
@@ -121,7 +121,7 @@ if (config.nodeEnv === 'development') {
   console.log(`   Merchant: ${config.merchantName}`);
   console.log(`   Terminal ID: ${config.terminalId}`);
   console.log(`   Webhook Port: ${config.port}`);
-  console.log(`   Coinbase API Key: ${config.coinbaseApiKey.substring(0, 8)}...`);
+  console.log(`   Coinbase API Key: ********`);
   console.log('');
 }
 
