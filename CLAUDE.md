@@ -1,44 +1,48 @@
 # CLAUDE.md
 
-This file provides essential guidance to Claude Code when working with the FastPay codebase.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Quick Start - Where We Are Now
 
-**Current Status:** Week 2 of Phase 1 - Hardware validated, implementing reader mode architecture
+**Current Status:** Week 2 of Phase 1 - Hardware validated, ready to build terminal software
 
 **What Works:**
-- ✅ NFC hardware (PN532 module) communicating via USB-UART
-- ✅ Phone tap detection and UID reading (`test/detect-phone-tap.py`)
-- ✅ Reader mode fully functional with Adafruit library
-- ✅ Tag writing validates hardware works (proof of concept)
+- ✅ PN532 hardware communicating via USB-UART (FT232 adapter)
+- ✅ Reader mode: Phone tap detection with UID extraction (`test/detect-phone-tap.py`)
+- ✅ Firmware v1.6 detected, SAM configuration working
+- ✅ DTR/RTS control line issue resolved
+- ✅ Architecture finalized (reader mode + Coinbase Commerce)
+- ✅ Payment intent decision documented (no custom standard needed for Phase 1)
 
 **Critical Architecture Decision:**
-FastPay uses **READER MODE** - PN532 detects customer phone taps, payment data flows via API/QR.
+FastPay uses **READER MODE** - PN532 detects customer phone taps, payment flows via Coinbase Commerce API.
 
-**Why Reader Mode (Not Card Emulation or Physical Tags):**
-- ✅ Merchants have reliable internet (coffee shops, retail)
-- ✅ Customer signing requires network emission (Base L2 blockchain)
-- ✅ Leverages Coinbase Commerce hosted checkout
+**Why Reader Mode:**
+- ✅ Customers need internet anyway (Base L2 blockchain settlement)
+- ✅ Leverages proven Coinbase Commerce hosted checkout
+- ✅ NFC tap = UX convenience (alternative to QR scan)
 - ✅ No physical tag consumables or logistics
-- ✅ Fast tap detection without tag writing latency
-- ✅ Can handle high transaction volume
+- ✅ No card emulation complexity (UART timing issues)
+- ✅ Scalable to high transaction volume
 
-**Card Emulation Status:**
-NOT VIABLE with PN532 over UART. See `test/CARD-EMULATION-FINDINGS.md` for technical details.
+**Architecture Evolution:**
+After testing three approaches (card emulation, physical tags, reader mode), reader mode was selected as production approach. Card emulation failed due to PN532 UART timing limitations. Physical tags work but are unnecessary since customers need internet for blockchain anyway. See `test/CARD-EMULATION-FINDINGS.md` for investigation details.
 
 **What's Next:**
-1. Create `terminal/` directory structure
+1. Create `terminal/` directory structure (see `terminal-implementation.md` for detailed plan)
 2. Build Node.js payment request layer (Coinbase Commerce API integration)
 3. Implement reader mode: PN532 detects tap → associates with pending charge
 4. Add IPC between Node.js and Python (stdin/stdout for tap detection)
 5. Test full payment flow: Create charge → Display QR → Detect tap → Customer pays → Confirm on-chain
 
 **Key Files to Reference:**
+- `terminal-implementation.md` - CURRENT: Detailed terminal implementation plan (Graphite-style stacks)
+- `PAYMENT-INTENT-DECISION.md` - CURRENT: Payment intent architecture decision (use Coinbase Commerce)
 - `test/detect-phone-tap.py` - WORKING: Reader mode tap detection (production ready)
 - `test/CARD-EMULATION-FINDINGS.md` - Why card emulation failed (technical investigation)
-- `test/write-payment-tag.py` - Hardware validation (proves reader/writer works)
+- `test/test-adafruit-pn532.py` - Hardware validation (basic firmware check)
 - `test/SETUP-SUCCESS.md` - Hardware setup and wiring
-- `test/NEXT-STEPS.md` - Detailed implementation roadmap
+- `implementation-history.md` - Detailed debugging, hardware setup, implementation decisions
 - `FastPay-Phase1-ProjectDoc.md` - Complete architecture spec (gitignored but critical reference)
 
 ## Project Overview
@@ -137,27 +141,19 @@ pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
 ```bash
 cd test
 
-# Core hardware verification (run these first)
-python3 test-adafruit-pn532.py        # Verify PN532 module responding
-python3 detect-phone-tap.py           # ✅ PRODUCTION READY: Reader mode tap detection
+# PRODUCTION-READY SCRIPTS (use these)
+python3 test-adafruit-pn532.py        # Quick hardware verification
+python3 detect-phone-tap.py           # Reader mode tap detection (basis for terminal NFC bridge)
 
-# Hardware validation tests (prove reader/writer works)
-python3 write-payment-tag.py          # Validates PN532 can write to tags (not used in production)
-
-# Card emulation experiments (DEPRECATED - see CARD-EMULATION-FINDINGS.md)
-# These don't work reliably with PN532+UART, kept for reference only
-# python3 card-emulation-hybrid.py
-# python3 card-emulation-simple.py
-# python3 card-emulation-raw.py
-
-# Legacy experiments (kept for reference)
-python3 write-payment-request.py      # Early tag writing experiments
-python3 write-simple-payment.py       # Simple payload tests
-
-# Advanced diagnostics
-python3 test-serial.py                # Serial port detection and verification
-python3 test-wire-quality.py          # Control signal testing (DTR/RTS)
+# DIAGNOSTIC SCRIPTS (troubleshooting only)
+python3 test-serial.py                # Serial port detection
+python3 test-wire-quality.py          # Control signal testing (found DTR/RTS issue)
 python3 test-baudrates.py             # Baudrate scanning
+
+# DEPRECATED EXPERIMENTS (reference only, not used in production)
+# Card emulation - Failed due to UART timing (see CARD-EMULATION-FINDINGS.md)
+# Physical tag writing - Works but unnecessary (customers need internet anyway)
+# All card-emulation-*.py and write-*.py scripts are deprecated
 ```
 
 ### Production NFC Reader Script
@@ -571,12 +567,43 @@ async startMonitoring(paymentRequest, onPaymentReceived) {
    - Check for sufficient USDC balance in customer wallet
    - Review Coinbase Commerce dashboard for charge status
 
+## Next Steps for Implementation
+
+When building the terminal software, follow the detailed plan in `terminal-implementation.md`:
+
+**Stack 1: Foundation (Days 1-2)**
+- Create `terminal/` directory structure
+- Set up `package.json` with Node.js v20 dependencies
+- Configure environment variables (`.env.example`)
+- Add platform detection (macOS vs Pi)
+
+**Stack 2: Python NFC Bridge (Days 1-2)**
+- Port `test/detect-phone-tap.py` → `terminal/scripts/nfc_reader.py`
+- Add JSON IPC output via stdout
+- Implement error handling and reconnection
+- Add UID deduplication (debouncing)
+
+**Stack 3: Node.js Core (Days 3-4)**
+- Create `src/nfc.js` - Spawn Python process, parse JSON events
+- Create `src/commerce.js` - Coinbase Commerce API wrapper
+- Create `src/payment.js` - Charge lifecycle management
+- Create `src/webhook.js` - Payment confirmation endpoint
+
+**Stack 4: Terminal App (Days 5-7)**
+- Create `src/index.js` - Main application loop
+- Wire up all services (NFC, Commerce, Webhooks)
+- Implement merchant-facing UI (console-based)
+- Add payment flow state machine
+
+See `terminal-implementation.md` for complete implementation details, acceptance criteria, and code examples.
+
 ## References
 
+- **terminal-implementation.md** - Complete terminal implementation plan with code examples
+- **PAYMENT-INTENT-DECISION.md** - Payment intent architecture decision (Coinbase Commerce vs custom)
 - **implementation-history.md** - Detailed debugging, hardware setup, implementation decisions
-- **test/CARD-EMULATION-FINDINGS.md** - Investigation report: why card emulation failed, why tags work
+- **test/CARD-EMULATION-FINDINGS.md** - Investigation report: why card emulation failed
 - **test/SETUP-SUCCESS.md** - Verified hardware wiring and configuration
-- **test/NEXT-STEPS.md** - Development roadmap and next tasks
 - **FastPay-Phase1-ProjectDoc.md** - Complete architectural specification (gitignored, local only)
 - **README.md** - Project overview and roadmap
 - **test/** - Working hardware test scripts
