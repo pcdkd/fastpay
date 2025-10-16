@@ -34,6 +34,16 @@ export class CommerceClient {
   }
 
   /**
+   * Handle API errors with consistent logging and error messages
+   * @private
+   */
+  _handleApiError(error, action) {
+    const errorMessage = error.response?.data?.error?.message || error.message;
+    this.logger.error(`[Commerce] ${action} failed:`, errorMessage);
+    throw new Error(`Failed to ${action.toLowerCase()}: ${errorMessage}`);
+  }
+
+  /**
    * Transform API charge response to camelCase (DRY helper)
    * @private
    */
@@ -102,9 +112,7 @@ export class CommerceClient {
 
       return this._transformCharge(charge);
     } catch (error) {
-      const errorMessage = error.response?.data?.error?.message || error.message;
-      this.logger.error('[Commerce] Charge creation failed:', errorMessage);
-      throw new Error(`Failed to create charge: ${errorMessage}`);
+      this._handleApiError(error, 'Charge creation');
     }
   }
 
@@ -124,9 +132,7 @@ export class CommerceClient {
 
       return this._transformCharge(charge, true);
     } catch (error) {
-      const errorMessage = error.response?.data?.error?.message || error.message;
-      this.logger.error('[Commerce] Charge retrieval failed:', errorMessage);
-      throw new Error(`Failed to retrieve charge: ${errorMessage}`);
+      this._handleApiError(error, 'Charge retrieval');
     }
   }
 
@@ -149,34 +155,29 @@ export class CommerceClient {
       return null;
     }
 
+    // Compute HMAC-SHA256 signature
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    hmac.update(rawBody);
+    const computedSignature = hmac.digest('hex');
+
+    // Constant-time comparison to prevent timing attacks
+    // Handle length mismatch to prevent timingSafeEqual crash
+    const sigBuf = Buffer.from(signature);
+    const compBuf = Buffer.from(computedSignature);
+    if (sigBuf.length !== compBuf.length) {
+      logger.error('[Commerce] Webhook signature length mismatch');
+      return null;
+    }
+    if (!crypto.timingSafeEqual(sigBuf, compBuf)) {
+      logger.error('[Commerce] Webhook signature mismatch');
+      return null;
+    }
+
+    // Parse and return event - separate error handling for JSON parsing
     try {
-      // Compute HMAC-SHA256 signature
-      const hmac = crypto.createHmac('sha256', webhookSecret);
-      hmac.update(rawBody);
-      const computedSignature = hmac.digest('hex');
-
-      // Constant-time comparison to prevent timing attacks
-      // Handle length mismatch to prevent timingSafeEqual crash
-      const sigBuf = Buffer.from(signature);
-      const compBuf = Buffer.from(computedSignature);
-      if (sigBuf.length !== compBuf.length) {
-        logger.error('[Commerce] Webhook signature length mismatch');
-        return null;
-      }
-      if (!crypto.timingSafeEqual(sigBuf, compBuf)) {
-        logger.error('[Commerce] Webhook signature mismatch');
-        return null;
-      }
-
-      // Parse and return event - separate error handling for JSON parsing
-      try {
-        return JSON.parse(rawBody);
-      } catch (parseError) {
-        logger.error('[Commerce] Webhook payload parsing failed after successful signature verification:', parseError.message);
-        return null;
-      }
-    } catch (error) {
-      logger.error('[Commerce] Webhook verification failed:', error.message);
+      return JSON.parse(rawBody);
+    } catch (parseError) {
+      logger.error('[Commerce] Webhook payload parsing failed after successful signature verification:', parseError.message);
       return null;
     }
   }
