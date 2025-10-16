@@ -1,5 +1,5 @@
 import axios from 'axios';
-import crypto from 'crypto';
+import crypto from 'crypto';  // NOTE: Uses Node.js built-in crypto. Remove 'crypto' from package.json if present.
 
 const COINBASE_COMMERCE_API_URL = 'https://api.commerce.coinbase.com';
 
@@ -17,11 +17,12 @@ const COINBASE_COMMERCE_API_URL = 'https://api.commerce.coinbase.com';
  *   console.log(charge.hostedUrl); // Customer payment page
  */
 export class CommerceClient {
-  constructor(apiKey) {
+  constructor(apiKey, logger = console) {
     if (!apiKey) {
       throw new Error('Coinbase Commerce API key is required');
     }
 
+    this.logger = logger;
     this.client = axios.create({
       baseURL: COINBASE_COMMERCE_API_URL,
       headers: {
@@ -30,6 +31,29 @@ export class CommerceClient {
         'Content-Type': 'application/json',
       },
     });
+  }
+
+  /**
+   * Transform API charge response to camelCase (DRY helper)
+   * @private
+   */
+  _transformCharge(charge, includeStatus = false) {
+    const transformed = {
+      id: charge.id,
+      hostedUrl: charge.hosted_url,
+      addresses: charge.addresses,
+      pricing: charge.pricing,
+      expiresAt: charge.expires_at,
+      timeline: charge.timeline,
+    };
+
+    if (includeStatus) {
+      // Defensive: handle empty or missing timeline
+      transformed.status = charge.timeline?.[charge.timeline.length - 1]?.status;
+      transformed.payments = charge.payments;
+    }
+
+    return transformed;
   }
 
   /**
@@ -62,7 +86,7 @@ export class CommerceClient {
         },
       };
 
-      console.log('[Commerce] Creating charge:', {
+      this.logger.log('[Commerce] Creating charge:', {
         amount: chargeData.local_price.amount,
         currency,
         description,
@@ -71,23 +95,15 @@ export class CommerceClient {
       const response = await this.client.post('/charges', chargeData);
       const charge = response.data.data;
 
-      console.log('[Commerce] Charge created:', {
+      this.logger.log('[Commerce] Charge created:', {
         id: charge.id,
         hostedUrl: charge.hosted_url,
       });
 
-      // Convert to camelCase for JavaScript convention
-      return {
-        id: charge.id,
-        hostedUrl: charge.hosted_url,
-        addresses: charge.addresses,
-        pricing: charge.pricing,
-        expiresAt: charge.expires_at,
-        timeline: charge.timeline,
-      };
+      return this._transformCharge(charge);
     } catch (error) {
       const errorMessage = error.response?.data?.error?.message || error.message;
-      console.error('[Commerce] Charge creation failed:', errorMessage);
+      this.logger.error('[Commerce] Charge creation failed:', errorMessage);
       throw new Error(`Failed to create charge: ${errorMessage}`);
     }
   }
@@ -106,22 +122,10 @@ export class CommerceClient {
       const response = await this.client.get(`/charges/${chargeId}`);
       const charge = response.data.data;
 
-      // Defensive: handle empty or missing timeline
-      const latestStatus = charge.timeline?.[charge.timeline.length - 1]?.status;
-
-      // Convert to camelCase for JavaScript convention
-      return {
-        id: charge.id,
-        status: latestStatus,
-        payments: charge.payments,
-        timeline: charge.timeline,
-        addresses: charge.addresses,
-        pricing: charge.pricing,
-        expiresAt: charge.expires_at,
-      };
+      return this._transformCharge(charge, true);
     } catch (error) {
       const errorMessage = error.response?.data?.error?.message || error.message;
-      console.error('[Commerce] Charge retrieval failed:', errorMessage);
+      this.logger.error('[Commerce] Charge retrieval failed:', errorMessage);
       throw new Error(`Failed to retrieve charge: ${errorMessage}`);
     }
   }
@@ -135,12 +139,13 @@ export class CommerceClient {
    * @param {string} rawBody - Raw request body (string)
    * @param {string} signature - x-cc-webhook-signature header
    * @param {string} webhookSecret - Webhook secret from dashboard
+   * @param {Object} logger - Logger instance (default: console)
    * @returns {Object|null} Parsed event or null if invalid
    */
-  static verifyWebhook(rawBody, signature, webhookSecret) {
+  static verifyWebhook(rawBody, signature, webhookSecret, logger = console) {
     // Input validation
     if (!rawBody || !signature || !webhookSecret) {
-      console.error('[Commerce] Webhook verification failed: Missing rawBody, signature, or webhookSecret');
+      logger.error('[Commerce] Webhook verification failed: Missing rawBody, signature, or webhookSecret');
       return null;
     }
 
@@ -155,11 +160,11 @@ export class CommerceClient {
       const sigBuf = Buffer.from(signature);
       const compBuf = Buffer.from(computedSignature);
       if (sigBuf.length !== compBuf.length) {
-        console.error('[Commerce] Webhook signature length mismatch');
+        logger.error('[Commerce] Webhook signature length mismatch');
         return null;
       }
       if (!crypto.timingSafeEqual(sigBuf, compBuf)) {
-        console.error('[Commerce] Webhook signature mismatch');
+        logger.error('[Commerce] Webhook signature mismatch');
         return null;
       }
 
@@ -167,11 +172,11 @@ export class CommerceClient {
       try {
         return JSON.parse(rawBody);
       } catch (parseError) {
-        console.error('[Commerce] Webhook payload parsing failed after successful signature verification:', parseError.message);
+        logger.error('[Commerce] Webhook payload parsing failed after successful signature verification:', parseError.message);
         return null;
       }
     } catch (error) {
-      console.error('[Commerce] Webhook verification failed:', error.message);
+      logger.error('[Commerce] Webhook verification failed:', error.message);
       return null;
     }
   }
