@@ -58,7 +58,7 @@ export class CommerceClient {
         pricing_type: 'fixed_price',
         metadata: {
           terminal_id: terminalId,
-          tap_uid: null,  // Will be updated when customer taps
+          tap_uid: null,  // Will be updated via separate API call when customer taps
           created_at: new Date().toISOString(),
         },
       };
@@ -74,15 +74,16 @@ export class CommerceClient {
 
       console.log('[Commerce] Charge created:', {
         id: charge.id,
-        hostedUrl: charge.hosted_url,
+        hosted_url: charge.hosted_url,
       });
 
+      // Return as-is from API (keep snake_case for consistency)
       return {
         id: charge.id,
-        hostedUrl: charge.hosted_url,
+        hosted_url: charge.hosted_url,
         addresses: charge.addresses,
         pricing: charge.pricing,
-        expiresAt: charge.expires_at,
+        expires_at: charge.expires_at,
         timeline: charge.timeline,
       };
     } catch (error) {
@@ -106,7 +107,8 @@ export class CommerceClient {
       const response = await this.client.get(`/charges/${chargeId}`);
       const charge = response.data.data;
 
-      const latestStatus = charge.timeline[charge.timeline.length - 1].status;
+      // Defensive: handle empty or missing timeline
+      const latestStatus = charge.timeline?.[charge.timeline.length - 1]?.status;
 
       return {
         id: charge.id,
@@ -135,6 +137,12 @@ export class CommerceClient {
    * @returns {Object|null} Parsed event or null if invalid
    */
   static verifyWebhook(rawBody, signature, webhookSecret) {
+    // Input validation
+    if (!rawBody || !signature || !webhookSecret) {
+      console.error('[Commerce] Webhook verification failed: Missing rawBody, signature, or webhookSecret');
+      return null;
+    }
+
     try {
       // Compute HMAC-SHA256 signature
       const hmac = crypto.createHmac('sha256', webhookSecret);
@@ -142,7 +150,14 @@ export class CommerceClient {
       const computedSignature = hmac.digest('hex');
 
       // Constant-time comparison to prevent timing attacks
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computedSignature))) {
+      // Handle length mismatch to prevent timingSafeEqual crash
+      const sigBuf = Buffer.from(signature);
+      const compBuf = Buffer.from(computedSignature);
+      if (sigBuf.length !== compBuf.length) {
+        console.error('[Commerce] Webhook signature length mismatch');
+        return null;
+      }
+      if (!crypto.timingSafeEqual(sigBuf, compBuf)) {
         console.error('[Commerce] Webhook signature mismatch');
         return null;
       }
