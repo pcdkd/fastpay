@@ -32,7 +32,15 @@ const DEFAULT_PYTHON_EXECUTABLE = 'python3';
 export class NFCBridge extends EventEmitter {
   constructor(config) {
     super();
-    this.config = config;
+    // Explicitly pick config properties for better encapsulation
+    this.config = {
+      debug: config.debug,
+      nfcPort: config.nfcPort,
+      nfcBaudRate: config.nfcBaudRate,
+      tapDebounceMs: config.tapDebounceMs,
+      pythonExecutable: config.pythonExecutable,
+      nfcScriptPath: config.nfcScriptPath,
+    };
     this.process = null;
     this.isShuttingDown = false;
     this.buffer = '';  // Buffer for accumulating partial stdout data
@@ -56,8 +64,20 @@ export class NFCBridge extends EventEmitter {
     }
     this.isShuttingDown = false;
 
-    const scriptPath = path.join(__dirname, '../scripts/nfc_reader.py');
+    const scriptPath = this.config.nfcScriptPath || path.join(__dirname, '../scripts/nfc_reader.py');
     const pythonExecutable = this.config.pythonExecutable || DEFAULT_PYTHON_EXECUTABLE;
+
+    // Validate pythonExecutable to prevent command injection
+    const executableName = path.basename(pythonExecutable);
+    if (!['python', 'python3'].includes(executableName)) {
+      const message = `Invalid python executable configured. The executable name must be 'python' or 'python3'. Provided: ${pythonExecutable}`;
+      console.error(`[NFC] ${message}`);
+      this.emit('error', {
+        message,
+        fatal: true,
+      });
+      return;
+    }
 
     if (this.config.debug) {
       console.log('[NFC] Starting NFC reader process...');
@@ -84,10 +104,14 @@ export class NFCBridge extends EventEmitter {
       stdio: ['ignore', 'pipe', 'pipe'],  // stdin, stdout, stderr
     });
 
+    // Set explicit UTF-8 encoding on streams
+    this.process.stdout.setEncoding('utf8');
+    this.process.stderr.setEncoding('utf8');
+
     // Parse JSON events from stdout (IPC)
     // Use buffering to handle partial data chunks
     this.process.stdout.on('data', (data) => {
-      this.buffer += data.toString();
+      this.buffer += data;
       let newlineIndex;
 
       while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
@@ -112,7 +136,7 @@ export class NFCBridge extends EventEmitter {
 
     // Log stderr (debug output from Python)
     this.process.stderr.on('data', (data) => {
-      const message = data.toString().trim();
+      const message = data.trim();
       if (message) {
         console.error('[NFC Debug]', message);
       }
