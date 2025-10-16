@@ -35,6 +35,7 @@ export class NFCBridge extends EventEmitter {
     this.process = null;
     this.isShuttingDown = false;
     this.buffer = '';  // Buffer for accumulating partial stdout data
+    this.restartTimeout = null;  // Track restart timer to prevent race conditions
   }
 
   /**
@@ -45,6 +46,13 @@ export class NFCBridge extends EventEmitter {
       console.warn('[NFC] Process already running');
       return;
     }
+
+    // Clear any pending restart timeout and reset shutdown flag
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
+    this.isShuttingDown = false;
 
     const scriptPath = path.join(__dirname, '../scripts/nfc_reader.py');
     const pythonExecutable = this.config.pythonExecutable || DEFAULT_PYTHON_EXECUTABLE;
@@ -80,6 +88,11 @@ export class NFCBridge extends EventEmitter {
             this.handleEvent(event);
           } catch (err) {
             console.error('[NFC] Invalid JSON from Python:', line);
+            this.emit('error', {
+              message: `Invalid JSON from Python: ${err.message}`,
+              fatal: false,
+              raw: line,
+            });
           }
         }
       }
@@ -95,12 +108,14 @@ export class NFCBridge extends EventEmitter {
 
     // Handle process exit
     this.process.on('exit', (code, signal) => {
-      console.error(`[NFC] Python process exited (code: ${code}, signal: ${signal})`);
       this.process = null;  // Only place where process is cleared
 
-      if (!this.isShuttingDown) {
+      if (this.isShuttingDown) {
+        console.log(`[NFC] Python process exited gracefully (signal: ${signal})`);
+      } else {
+        console.error(`[NFC] Python process exited unexpectedly (code: ${code}, signal: ${signal})`);
         console.error(`[NFC] Unexpected exit, restarting in ${RESTART_DELAY_MS / 1000} seconds...`);
-        setTimeout(() => this.start(), RESTART_DELAY_MS);
+        this.restartTimeout = setTimeout(() => this.start(), RESTART_DELAY_MS);
       }
     });
 
@@ -122,6 +137,12 @@ export class NFCBridge extends EventEmitter {
   stop() {
     console.log('[NFC] Stopping NFC reader...');
     this.isShuttingDown = true;
+
+    // Cancel any pending restart to prevent race condition
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
 
     if (this.process) {
       this.process.kill('SIGTERM');
