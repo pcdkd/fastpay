@@ -1,5 +1,9 @@
 import QRCode from 'qrcode';
 
+// Constants
+const CHARGE_EXPIRATION_MS = 180_000;  // 3 minutes
+const EXPIRATION_CHECK_INTERVAL_MS = 30_000;  // Check every 30 seconds
+
 /**
  * Payment Manager - Handles charge lifecycle and tap association
  *
@@ -9,8 +13,9 @@ import QRCode from 'qrcode';
  * Usage:
  *   const manager = new PaymentManager(commerceClient, terminalId);
  *   const charge = await manager.createPaymentRequest(5.00, 'Coffee');
- *   await manager.associateTap('086AF124'); // When customer taps
+ *   manager.associateTap('086AF124'); // When customer taps
  *   manager.completePurchase(charge.id); // After webhook confirmation
+ *   manager.shutdown(); // Clean up resources
  */
 export class PaymentManager {
   constructor(commerceClient, terminalId) {
@@ -18,6 +23,40 @@ export class PaymentManager {
     this.terminalId = terminalId;
     this.pendingCharges = new Map();  // chargeId → charge data
     this.tapMap = new Map();  // tapUid → chargeId
+
+    // Start periodic expiration check
+    this.expirationInterval = setInterval(() => this._cleanupExpiredCharges(), EXPIRATION_CHECK_INTERVAL_MS);
+  }
+
+  /**
+   * Clean up expired charges (removes from both pendingCharges and tapMap)
+   * @private
+   */
+  _cleanupExpiredCharges() {
+    const now = Date.now();
+    for (const [chargeId, charge] of this.pendingCharges.entries()) {
+      if (now - charge.createdAt >= CHARGE_EXPIRATION_MS) {
+        console.log(`[Payment] Charge ${chargeId} expired`);
+
+        // Clean up tap mapping to prevent memory leak
+        if (charge.tapUid) {
+          this.tapMap.delete(charge.tapUid);
+        }
+
+        this.pendingCharges.delete(chargeId);
+      }
+    }
+  }
+
+  /**
+   * Shutdown payment manager and clean up resources
+   */
+  shutdown() {
+    if (this.expirationInterval) {
+      clearInterval(this.expirationInterval);
+      this.expirationInterval = null;
+    }
+    console.log('[Payment] Payment manager shut down');
   }
 
   /**
@@ -43,14 +82,6 @@ export class PaymentManager {
       tapUid: null,
     });
 
-    // Auto-expire after 3 minutes
-    setTimeout(() => {
-      if (this.pendingCharges.has(charge.id)) {
-        console.log(`[Payment] Charge ${charge.id} expired`);
-        this.pendingCharges.delete(charge.id);
-      }
-    }, 180_000);
-
     console.log(`[Payment] Payment request created: $${amount.toFixed(2)}`);
 
     return charge;
@@ -62,21 +93,18 @@ export class PaymentManager {
    * @param {string} tapUid - Tap UID from NFC reader
    * @returns {Object|null} Associated charge or null if no pending charges
    */
-  async associateTap(tapUid) {
-    // Find most recent pending charge (not already tapped)
-    const charges = Array.from(this.pendingCharges.values())
-      .filter(c => !c.tapUid)
-      .sort((a, b) => b.createdAt - a.createdAt);
+  associateTap(tapUid) {
+    // Find most recent untapped charge in a single pass (O(n) instead of O(n log n))
+    const charge = Array.from(this.pendingCharges.values())
+      .reduce((latest, c) => {
+        if (!c.tapUid && (!latest || c.createdAt > latest.createdAt)) {
+          return c;
+        }
+        return latest;
+      }, null);
 
-    if (charges.length === 0) {
+    if (!charge) {
       console.warn('[Payment] Tap received but no pending charges');
-      return null;
-    }
-
-    const charge = charges[0];
-
-    if (charge.tapUid) {
-      console.warn('[Payment] Charge already associated with tap');
       return null;
     }
 
