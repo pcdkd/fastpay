@@ -22,7 +22,6 @@ export class CommerceClient {
       throw new Error('Coinbase Commerce API key is required');
     }
 
-    this.apiKey = apiKey;
     this.client = axios.create({
       baseURL: COINBASE_COMMERCE_API_URL,
       headers: {
@@ -74,16 +73,16 @@ export class CommerceClient {
 
       console.log('[Commerce] Charge created:', {
         id: charge.id,
-        hosted_url: charge.hosted_url,
+        hostedUrl: charge.hosted_url,
       });
 
-      // Return as-is from API (keep snake_case for consistency)
+      // Convert to camelCase for JavaScript convention
       return {
         id: charge.id,
-        hosted_url: charge.hosted_url,
+        hostedUrl: charge.hosted_url,
         addresses: charge.addresses,
         pricing: charge.pricing,
-        expires_at: charge.expires_at,
+        expiresAt: charge.expires_at,
         timeline: charge.timeline,
       };
     } catch (error) {
@@ -110,6 +109,7 @@ export class CommerceClient {
       // Defensive: handle empty or missing timeline
       const latestStatus = charge.timeline?.[charge.timeline.length - 1]?.status;
 
+      // Convert to camelCase for JavaScript convention
       return {
         id: charge.id,
         status: latestStatus,
@@ -117,6 +117,7 @@ export class CommerceClient {
         timeline: charge.timeline,
         addresses: charge.addresses,
         pricing: charge.pricing,
+        expiresAt: charge.expires_at,
       };
     } catch (error) {
       const errorMessage = error.response?.data?.error?.message || error.message;
@@ -162,9 +163,13 @@ export class CommerceClient {
         return null;
       }
 
-      // Parse and return event
-      const event = JSON.parse(rawBody);
-      return event;
+      // Parse and return event - separate error handling for JSON parsing
+      try {
+        return JSON.parse(rawBody);
+      } catch (parseError) {
+        console.error('[Commerce] Webhook payload parsing failed after successful signature verification:', parseError.message);
+        return null;
+      }
     } catch (error) {
       console.error('[Commerce] Webhook verification failed:', error.message);
       return null;
