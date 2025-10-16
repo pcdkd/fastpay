@@ -8,12 +8,12 @@ import { PaymentManager } from './payment.js';
 import { createWebhookServer } from './webhook.js';
 
 console.log(`
-┌────────────────────────────────────────────────────────────────┐
-│                                                                  │
+┌───────────────────────────────────────────────────────────────┐
+│                                                                 │
 │                    💳 FastPay Terminal                          │
 │                  Tap-to-Pay Crypto Payments                     │
-│                                                                  │
-└────────────────────────────────────────────────────────────────┘
+│                                                                 │
+└───────────────────────────────────────────────────────────────┘
 `);
 
 // Initialize services
@@ -34,6 +34,7 @@ const server = webhookApp.listen(config.port, () => {
 // Terminal UI state
 let currentState = 'IDLE';  // IDLE, WAITING_FOR_PAYMENT, COMPLETED
 let currentCharge = null;
+let isPrompting = false;  // Re-entry guard for promptForAmount
 
 // NFC event handlers
 nfcBridge.on('ready', (event) => {
@@ -61,11 +62,11 @@ nfcBridge.on('tap', async (event) => {
   }
 });
 
-nfcBridge.on('error', (event) => {
+nfcBridge.on('error', async (event) => {
   console.error(`\n❌ NFC Error: ${event.message}`);
   if (event.fatal) {
     console.error('   Fatal error - exiting...');
-    cleanup();
+    await cleanup();
     process.exit(1);
   }
 });
@@ -106,15 +107,17 @@ const rl = readline.createInterface({
  * Prompt merchant for sale amount
  */
 function promptForAmount() {
-  if (currentState !== 'IDLE') {
+  if (currentState !== 'IDLE' || isPrompting) {
     return;
   }
+
+  isPrompting = true;  // Set guard before async callback
 
   rl.question('\n💵 Enter sale amount (USD) or "q" to quit: $', async (input) => {
     // Handle quit
     if (input.toLowerCase() === 'q' || input.toLowerCase() === 'quit') {
       console.log('\n👋 Shutting down...');
-      cleanup();
+      await cleanup();
       process.exit(0);
       return;
     }
@@ -124,6 +127,7 @@ function promptForAmount() {
 
     if (isNaN(amount) || amount <= 0) {
       console.log('❌ Invalid amount. Please enter a positive number.');
+      isPrompting = false;  // Clear guard before re-prompting
       promptForAmount();
       return;
     }
@@ -166,6 +170,7 @@ function promptForAmount() {
       console.error(`\n❌ Failed to create charge: ${error.message}`);
       currentState = 'IDLE';
       currentCharge = null;
+      isPrompting = false;  // Clear guard before re-prompting
       promptForAmount();
     }
   });
@@ -174,7 +179,7 @@ function promptForAmount() {
 /**
  * Graceful shutdown
  */
-function cleanup() {
+async function cleanup() {
   console.log('\n🧹 Cleaning up...');
 
   // Stop NFC reader
@@ -182,10 +187,13 @@ function cleanup() {
     nfcBridge.stop();
   }
 
-  // Close webhook server
+  // Close webhook server (await to ensure it finishes before process exits)
   if (server) {
-    server.close(() => {
-      console.log('✅ Webhook server closed');
+    await new Promise((resolve) => {
+      server.close(() => {
+        console.log('✅ Webhook server closed');
+        resolve();
+      });
     });
   }
 
@@ -196,28 +204,28 @@ function cleanup() {
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n\n👋 Received SIGINT (Ctrl+C)');
-  cleanup();
+  await cleanup();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n\n👋 Received SIGTERM');
-  cleanup();
+  await cleanup();
   process.exit(0);
 });
 
 // Handle uncaught errors
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', async (error) => {
   console.error('\n❌ Uncaught Exception:', error);
-  cleanup();
+  await cleanup();
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', async (reason, promise) => {
   console.error('\n❌ Unhandled Rejection:', reason);
-  cleanup();
+  await cleanup();
   process.exit(1);
 });
 
