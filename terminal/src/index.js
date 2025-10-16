@@ -35,6 +35,7 @@ const server = webhookApp.listen(config.port, () => {
 let currentState = 'IDLE';  // IDLE, WAITING_FOR_PAYMENT, COMPLETED
 let currentCharge = null;
 let isPrompting = false;  // Re-entry guard for promptForAmount
+let returnToIdleTimeout = null;  // Track pending timeout to prevent race conditions
 
 // NFC event handlers
 nfcBridge.on('ready', (event) => {
@@ -89,8 +90,14 @@ webhookApp.on('payment:confirmed', (event) => {
   currentState = 'COMPLETED';
   currentCharge = null;
 
+  // Clear any existing timeout to prevent race conditions from multiple rapid confirmations
+  if (returnToIdleTimeout) {
+    clearTimeout(returnToIdleTimeout);
+  }
+
   // Return to idle after 3 seconds
-  setTimeout(() => {
+  returnToIdleTimeout = setTimeout(() => {
+    returnToIdleTimeout = null;
     currentState = 'IDLE';
     console.log('\n');
     promptForAmount();
@@ -102,6 +109,13 @@ const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
+
+/**
+ * Generate charge description string
+ */
+function getChargeDescription() {
+  return `${config.merchantName} - Terminal ${config.terminalId}`;
+}
 
 /**
  * Prompt merchant for sale amount
@@ -140,7 +154,7 @@ function promptForAmount() {
 
       const charge = await paymentManager.createPaymentRequest(
         amount,
-        `${config.merchantName} - Terminal ${config.terminalId}`
+        getChargeDescription()
       );
 
       currentCharge = charge;
