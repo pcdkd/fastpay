@@ -29,22 +29,38 @@ export class PaymentManager {
   }
 
   /**
+   * Remove a charge and its tap mapping (DRY helper)
+   * @private
+   */
+  _removeCharge(chargeId) {
+    const charge = this.pendingCharges.get(chargeId);
+    if (!charge) {
+      return;
+    }
+
+    // Clean up tap mapping to prevent memory leak
+    if (charge.tapUid) {
+      this.tapMap.delete(charge.tapUid);
+    }
+
+    this.pendingCharges.delete(chargeId);
+  }
+
+  /**
    * Clean up expired charges (removes from both pendingCharges and tapMap)
    * @private
    */
   _cleanupExpiredCharges() {
     const now = Date.now();
-    for (const [chargeId, charge] of this.pendingCharges.entries()) {
-      if (now - charge.createdAt >= CHARGE_EXPIRATION_MS) {
-        console.log(`[Payment] Charge ${chargeId} expired`);
-
-        // Clean up tap mapping to prevent memory leak
-        if (charge.tapUid) {
-          this.tapMap.delete(charge.tapUid);
+    try {
+      for (const [chargeId, charge] of this.pendingCharges.entries()) {
+        if (now - charge.createdAt >= CHARGE_EXPIRATION_MS) {
+          console.log(`[Payment] Charge ${chargeId} expired`);
+          this._removeCharge(chargeId);
         }
-
-        this.pendingCharges.delete(chargeId);
       }
+    } catch (error) {
+      console.error('[Payment] Error during charge cleanup:', error);
     }
   }
 
@@ -94,14 +110,13 @@ export class PaymentManager {
    * @returns {Object|null} Associated charge or null if no pending charges
    */
   associateTap(tapUid) {
-    // Find most recent untapped charge in a single pass (O(n) instead of O(n log n))
-    const charge = Array.from(this.pendingCharges.values())
-      .reduce((latest, c) => {
-        if (!c.tapUid && (!latest || c.createdAt > latest.createdAt)) {
-          return c;
-        }
-        return latest;
-      }, null);
+    // Find most recent untapped charge using direct iteration (avoids array allocation)
+    let charge = null;
+    for (const c of this.pendingCharges.values()) {
+      if (!c.tapUid && (!charge || c.createdAt > charge.createdAt)) {
+        charge = c;
+      }
+    }
 
     if (!charge) {
       console.warn('[Payment] Tap received but no pending charges');
@@ -162,17 +177,8 @@ export class PaymentManager {
    * @param {string} chargeId - Charge identifier
    */
   completePurchase(chargeId) {
-    const charge = this.pendingCharges.get(chargeId);
-
-    if (charge) {
-      // Clean up tap mapping
-      if (charge.tapUid) {
-        this.tapMap.delete(charge.tapUid);
-      }
-
-      // Remove from pending
-      this.pendingCharges.delete(chargeId);
-
+    if (this.pendingCharges.has(chargeId)) {
+      this._removeCharge(chargeId);
       console.log(`[Payment] Purchase completed: ${chargeId}`);
     }
   }
