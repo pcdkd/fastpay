@@ -1,18 +1,31 @@
 import express from 'express';
+import { EventEmitter } from 'events';
 import { CommerceClient } from './commerce.js';
+
+// Coinbase Commerce event types (prevents typos)
+const EVENT_TYPES = {
+  CHARGE_CREATED: 'charge:created',
+  CHARGE_CONFIRMED: 'charge:confirmed',
+  CHARGE_FAILED: 'charge:failed',
+  CHARGE_DELAYED: 'charge:delayed',
+  CHARGE_PENDING: 'charge:pending',
+  CHARGE_RESOLVED: 'charge:resolved',
+};
 
 /**
  * Create Webhook Server for Coinbase Commerce payment confirmations
  *
  * @param {Object} config - Configuration object
  * @param {PaymentManager} paymentManager - Payment manager instance
- * @returns {express.Application} Express app instance
+ * @returns {Object} { app: Express app, events: EventEmitter }
  */
 export function createWebhookServer(config, paymentManager) {
   const app = express();
+  const events = new EventEmitter();
 
-  // Raw body needed for signature verification
+  // Raw body needed for signature verification (with size limit to prevent DoS)
   app.use(express.json({
+    limit: '100kb',  // Prevent large payload attacks
     verify: (req, res, buf) => {
       req.rawBody = buf.toString();
     },
@@ -61,27 +74,27 @@ export function createWebhookServer(config, paymentManager) {
 
       // Handle different event types
       switch (event.type) {
-        case 'charge:created':
+        case EVENT_TYPES.CHARGE_CREATED:
           console.log(`[Webhook] Charge created: ${event.data.id}`);
           break;
 
-        case 'charge:confirmed':
-          handleChargeConfirmed(event, app, paymentManager);
+        case EVENT_TYPES.CHARGE_CONFIRMED:
+          handleChargeConfirmed(event, events, paymentManager);
           break;
 
-        case 'charge:failed':
+        case EVENT_TYPES.CHARGE_FAILED:
           console.log(`[Webhook] Charge failed: ${event.data.id}`);
           break;
 
-        case 'charge:delayed':
+        case EVENT_TYPES.CHARGE_DELAYED:
           console.log(`[Webhook] Charge delayed: ${event.data.id}`);
           break;
 
-        case 'charge:pending':
+        case EVENT_TYPES.CHARGE_PENDING:
           console.log(`[Webhook] Charge pending: ${event.data.id}`);
           break;
 
-        case 'charge:resolved':
+        case EVENT_TYPES.CHARGE_RESOLVED:
           console.log(`[Webhook] Charge resolved: ${event.data.id}`);
           break;
 
@@ -96,17 +109,17 @@ export function createWebhookServer(config, paymentManager) {
     }
   });
 
-  return app;
+  return { app, events };
 }
 
 /**
  * Handle charge:confirmed event
  *
  * @param {Object} event - Webhook event
- * @param {express.Application} app - Express app (for emitting events)
+ * @param {EventEmitter} events - Event emitter for application events
  * @param {PaymentManager} paymentManager - Payment manager instance
  */
-function handleChargeConfirmed(event, app, paymentManager) {
+function handleChargeConfirmed(event, events, paymentManager) {
   const charge = event.data;
 
   console.log(`[Webhook] ✅ Payment confirmed for charge: ${charge.id}`);
@@ -117,12 +130,17 @@ function handleChargeConfirmed(event, app, paymentManager) {
     amount: charge.pricing.local.amount,
     currency: charge.pricing.local.currency,
     payments: charge.payments,
-    confirmedAt: new Date().toISOString(),
+    confirmedAt: event.created_at,  // Use Coinbase timestamp, not local processing time
   };
 
   // Emit event for main app to consume
-  app.emit('payment:confirmed', paymentDetails);
+  events.emit('payment:confirmed', paymentDetails);
 
-  // Clean up pending charge
-  paymentManager.completePurchase(charge.id);
+  // Clean up pending charge with error handling
+  try {
+    paymentManager.completePurchase(charge.id);
+  } catch (error) {
+    console.error(`[Webhook] Error cleaning up charge ${charge.id}:`, error.message);
+    // Event was already emitted, so log error but don't fail webhook
+  }
 }
