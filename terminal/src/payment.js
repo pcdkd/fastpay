@@ -18,14 +18,16 @@ const EXPIRATION_CHECK_INTERVAL_MS = 30_000;  // Check every 30 seconds
  *   manager.shutdown(); // Clean up resources
  */
 export class PaymentManager {
-  constructor(commerceClient, terminalId) {
+  constructor(commerceClient, terminalId, logger = console) {
     this.commerce = commerceClient;
     this.terminalId = terminalId;
+    this.logger = logger;
     this.pendingCharges = new Map();  // chargeId → charge data
     this.tapMap = new Map();  // tapUid → chargeId
 
     // Start periodic expiration check
     this.expirationInterval = setInterval(() => this._cleanupExpiredCharges(), EXPIRATION_CHECK_INTERVAL_MS);
+    this.expirationInterval.unref();  // Don't keep process alive if nothing else is pending
   }
 
   /**
@@ -38,8 +40,8 @@ export class PaymentManager {
       return;
     }
 
-    // Clean up tap mapping to prevent memory leak
-    if (charge.tapUid) {
+    // Clean up tap mapping only if it still points to this charge (prevents race condition)
+    if (charge.tapUid && this.tapMap.get(charge.tapUid) === chargeId) {
       this.tapMap.delete(charge.tapUid);
     }
 
@@ -55,12 +57,12 @@ export class PaymentManager {
     try {
       for (const [chargeId, charge] of this.pendingCharges.entries()) {
         if (now - charge.createdAt >= CHARGE_EXPIRATION_MS) {
-          console.log(`[Payment] Charge ${chargeId} expired`);
+          this.logger.log(`[Payment] Charge ${chargeId} expired`);
           this._removeCharge(chargeId);
         }
       }
     } catch (error) {
-      console.error('[Payment] Error during charge cleanup:', error);
+      this.logger.error('[Payment] Error during charge cleanup:', error);
     }
   }
 
@@ -72,7 +74,7 @@ export class PaymentManager {
       clearInterval(this.expirationInterval);
       this.expirationInterval = null;
     }
-    console.log('[Payment] Payment manager shut down');
+    this.logger.log('[Payment] Payment manager shut down');
   }
 
   /**
@@ -98,7 +100,7 @@ export class PaymentManager {
       tapUid: null,
     });
 
-    console.log(`[Payment] Payment request created: $${amount.toFixed(2)}`);
+    this.logger.log(`[Payment] Payment request created: $${amount.toFixed(2)}`);
 
     return charge;
   }
@@ -111,15 +113,21 @@ export class PaymentManager {
    */
   associateTap(tapUid) {
     // Find most recent untapped charge using direct iteration (avoids array allocation)
+    // Skip expired charges to prevent associating taps with charges that haven't been cleaned up yet
+    const now = Date.now();
     let charge = null;
     for (const c of this.pendingCharges.values()) {
-      if (!c.tapUid && (!charge || c.createdAt > charge.createdAt)) {
+      if (
+        !c.tapUid &&
+        (now - c.createdAt < CHARGE_EXPIRATION_MS) &&
+        (!charge || c.createdAt > charge.createdAt)
+      ) {
         charge = c;
       }
     }
 
     if (!charge) {
-      console.warn('[Payment] Tap received but no pending charges');
+      this.logger.warn('[Payment] Tap received but no pending charges');
       return null;
     }
 
@@ -127,7 +135,7 @@ export class PaymentManager {
     charge.tapUid = tapUid;
     this.tapMap.set(tapUid, charge.id);
 
-    console.log(`[Payment] Tap ${tapUid} associated with charge ${charge.id}`);
+    this.logger.log(`[Payment] Tap ${tapUid} associated with charge ${charge.id}`);
 
     return charge;
   }
@@ -147,7 +155,7 @@ export class PaymentManager {
       });
       return qr;
     } catch (error) {
-      console.error('[Payment] QR generation failed:', error.message);
+      this.logger.error('[Payment] QR generation failed:', error.message);
       return null;
     }
   }
@@ -165,10 +173,11 @@ export class PaymentManager {
   /**
    * Get all pending charges
    *
-   * @returns {Array<Object>} Array of pending charges
+   * @returns {Array<Object>} Array of pending charges (shallow copies to prevent mutation)
    */
   getAllPendingCharges() {
-    return Array.from(this.pendingCharges.values());
+    // Return shallow copies to prevent external mutation of internal state
+    return Array.from(this.pendingCharges.values(), c => ({ ...c }));
   }
 
   /**
@@ -179,7 +188,7 @@ export class PaymentManager {
   completePurchase(chargeId) {
     if (this.pendingCharges.has(chargeId)) {
       this._removeCharge(chargeId);
-      console.log(`[Payment] Purchase completed: ${chargeId}`);
+      this.logger.log(`[Payment] Purchase completed: ${chargeId}`);
     }
   }
 }
