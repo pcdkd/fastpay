@@ -12,6 +12,11 @@ const EVENT_TYPES = {
   CHARGE_RESOLVED: 'charge:resolved',
 };
 
+// Charge timeline status values
+const TIMELINE_STATUS = {
+  CONFIRMED: 'CONFIRMED',
+};
+
 /**
  * Create Webhook Server for Coinbase Commerce payment confirmations
  *
@@ -25,7 +30,7 @@ export function createWebhookServer(config, paymentManager) {
 
   // Raw body needed for signature verification (with size limit to prevent DoS)
   app.use(express.json({
-    limit: '10kb',  // Prevent large payload attacks (Coinbase Commerce webhooks are <10kb)
+    limit: '10kb',  // Prevent large payload attacks (Coinbase Commerce webhooks are < 10kb)
     verify: (req, res, buf) => {
       req.rawBody = buf.toString();
     },
@@ -126,7 +131,7 @@ function handleChargeConfirmed(event, events, paymentManager) {
 
   // Find the confirmation time from the charge timeline
   const confirmedTimelineEntry = Array.isArray(charge.timeline)
-    ? charge.timeline.find(entry => entry.status === 'CONFIRMED')
+    ? charge.timeline.find(entry => entry.status === TIMELINE_STATUS.CONFIRMED)
     : null;
   const confirmedAt = confirmedTimelineEntry ? confirmedTimelineEntry.time : null;
 
