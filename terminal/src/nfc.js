@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Constants
 const RESTART_DELAY_MS = 2000;  // Delay before restarting crashed NFC process
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 2000;  // Time to wait for SIGTERM before SIGKILL
 const DEFAULT_PYTHON_EXECUTABLE = 'python3';
 
 /**
@@ -36,6 +37,7 @@ export class NFCBridge extends EventEmitter {
     this.isShuttingDown = false;
     this.buffer = '';  // Buffer for accumulating partial stdout data
     this.restartTimeout = null;  // Track restart timer to prevent race conditions
+    this.killTimeout = null;  // Track SIGKILL timeout for graceful shutdown
   }
 
   /**
@@ -57,18 +59,28 @@ export class NFCBridge extends EventEmitter {
     const scriptPath = path.join(__dirname, '../scripts/nfc_reader.py');
     const pythonExecutable = this.config.pythonExecutable || DEFAULT_PYTHON_EXECUTABLE;
 
-    console.log('[NFC] Starting NFC reader process...');
-    console.log(`[NFC] Script: ${scriptPath}`);
-    console.log(`[NFC] Port: ${this.config.nfcPort}`);
-    console.log(`[NFC] Python: ${pythonExecutable}`);
+    if (this.config.debug) {
+      console.log('[NFC] Starting NFC reader process...');
+      console.log(`[NFC] Script: ${scriptPath}`);
+      console.log(`[NFC] Port: ${this.config.nfcPort}`);
+      console.log(`[NFC] Python: ${pythonExecutable}`);
+    }
+
+    // Build environment variables, conditionally adding optional config
+    const env = {
+      ...process.env,
+      NFC_PORT: this.config.nfcPort,
+    };
+
+    if (this.config.nfcBaudRate != null) {
+      env.NFC_BAUD_RATE = this.config.nfcBaudRate.toString();
+    }
+    if (this.config.tapDebounceMs != null) {
+      env.NFC_TAP_DEBOUNCE_MS = this.config.tapDebounceMs.toString();
+    }
 
     this.process = spawn(pythonExecutable, [scriptPath], {
-      env: {
-        ...process.env,
-        NFC_PORT: this.config.nfcPort,
-        NFC_BAUD_RATE: this.config.nfcBaudRate.toString(),
-        NFC_TAP_DEBOUNCE_MS: this.config.tapDebounceMs.toString(),
-      },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],  // stdin, stdout, stderr
     });
 
@@ -110,6 +122,12 @@ export class NFCBridge extends EventEmitter {
     this.process.on('exit', (code, signal) => {
       this.process = null;  // Only place where process is cleared
 
+      // Clear SIGKILL timeout if process exited
+      if (this.killTimeout) {
+        clearTimeout(this.killTimeout);
+        this.killTimeout = null;
+      }
+
       if (this.isShuttingDown) {
         console.log(`[NFC] Python process exited gracefully (signal: ${signal})`);
       } else {
@@ -145,6 +163,14 @@ export class NFCBridge extends EventEmitter {
     }
 
     if (this.process) {
+      // Set up SIGKILL timeout in case process doesn't respond to SIGTERM
+      this.killTimeout = setTimeout(() => {
+        if (this.process) {
+          console.warn('[NFC] Python process did not exit gracefully, sending SIGKILL');
+          this.process.kill('SIGKILL');
+        }
+      }, GRACEFUL_SHUTDOWN_TIMEOUT_MS);
+
       this.process.kill('SIGTERM');
       // Don't set process = null here - let exit handler do it
     }
