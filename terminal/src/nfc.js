@@ -5,6 +5,10 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Constants
+const RESTART_DELAY_MS = 2000;  // Delay before restarting crashed NFC process
+const DEFAULT_PYTHON_EXECUTABLE = 'python3';
+
 /**
  * NFC Bridge - Manages Python NFC reader process and IPC
  *
@@ -30,6 +34,7 @@ export class NFCBridge extends EventEmitter {
     this.config = config;
     this.process = null;
     this.isShuttingDown = false;
+    this.buffer = '';  // Buffer for accumulating partial stdout data
   }
 
   /**
@@ -42,12 +47,14 @@ export class NFCBridge extends EventEmitter {
     }
 
     const scriptPath = path.join(__dirname, '../scripts/nfc_reader.py');
+    const pythonExecutable = this.config.pythonExecutable || DEFAULT_PYTHON_EXECUTABLE;
 
     console.log('[NFC] Starting NFC reader process...');
     console.log(`[NFC] Script: ${scriptPath}`);
     console.log(`[NFC] Port: ${this.config.nfcPort}`);
+    console.log(`[NFC] Python: ${pythonExecutable}`);
 
-    this.process = spawn('python3', [scriptPath], {
+    this.process = spawn(pythonExecutable, [scriptPath], {
       env: {
         ...process.env,
         NFC_PORT: this.config.nfcPort,
@@ -58,15 +65,22 @@ export class NFCBridge extends EventEmitter {
     });
 
     // Parse JSON events from stdout (IPC)
+    // Use buffering to handle partial data chunks
     this.process.stdout.on('data', (data) => {
-      const lines = data.toString().split('\n').filter(line => line.trim());
+      this.buffer += data.toString();
+      let newlineIndex;
 
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          this.handleEvent(event);
-        } catch (err) {
-          console.error('[NFC] Invalid JSON from Python:', line);
+      while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
+        const line = this.buffer.substring(0, newlineIndex).trim();
+        this.buffer = this.buffer.substring(newlineIndex + 1);
+
+        if (line) {
+          try {
+            const event = JSON.parse(line);
+            this.handleEvent(event);
+          } catch (err) {
+            console.error('[NFC] Invalid JSON from Python:', line);
+          }
         }
       }
     });
@@ -82,13 +96,11 @@ export class NFCBridge extends EventEmitter {
     // Handle process exit
     this.process.on('exit', (code, signal) => {
       console.error(`[NFC] Python process exited (code: ${code}, signal: ${signal})`);
+      this.process = null;  // Only place where process is cleared
 
       if (!this.isShuttingDown) {
-        console.error('[NFC] Unexpected exit, restarting in 2 seconds...');
-        this.process = null;
-        setTimeout(() => this.start(), 2000);
-      } else {
-        this.process = null;
+        console.error(`[NFC] Unexpected exit, restarting in ${RESTART_DELAY_MS / 1000} seconds...`);
+        setTimeout(() => this.start(), RESTART_DELAY_MS);
       }
     });
 
@@ -96,7 +108,6 @@ export class NFCBridge extends EventEmitter {
     this.process.on('error', (err) => {
       console.error('[NFC] Failed to start Python process:', err.message);
       this.emit('error', {
-        event: 'error',
         message: `Failed to start NFC reader: ${err.message}`,
         fatal: true,
       });
@@ -114,7 +125,7 @@ export class NFCBridge extends EventEmitter {
 
     if (this.process) {
       this.process.kill('SIGTERM');
-      this.process = null;
+      // Don't set process = null here - let exit handler do it
     }
   }
 
