@@ -59,6 +59,15 @@ function validateInteger(value, name, min, max) {
 }
 
 /**
+ * Parse and validate an integer environment variable
+ */
+function getValidatedIntEnv(name, defaultValue, min, max) {
+  const valueStr = process.env[name] || String(defaultValue);
+  const value = parseInt(valueStr, 10);
+  return validateInteger(value, name, min, max);
+}
+
+/**
  * Validate required environment variables
  */
 function validateEnv() {
@@ -109,27 +118,10 @@ validateEnv();
 
 // Parse and validate configuration values
 const nfcPort = process.env.NFC_PORT || platformInfo.defaultPort;
-const nfcBaudRate = validateInteger(
-  parseInt(process.env.NFC_BAUD_RATE || '115200', 10),
-  'NFC_BAUD_RATE',
-  9600,
-  921600
-);
-const tapDebounceMs = validateInteger(
-  parseInt(process.env.NFC_TAP_DEBOUNCE_MS || '1000', 10),
-  'NFC_TAP_DEBOUNCE_MS',
-  100,
-  10000
-);
-const port = validateInteger(
-  parseInt(process.env.PORT || '3000', 10),
-  'PORT',
-  1,
-  65535
-);
-const chainId = process.env.CHAIN_ID
-  ? validateInteger(parseInt(process.env.CHAIN_ID, 10), 'CHAIN_ID', 1, 2147483647)
-  : 8453;
+const nfcBaudRate = getValidatedIntEnv('NFC_BAUD_RATE', 115200, 9600, 921600);
+const tapDebounceMs = getValidatedIntEnv('NFC_TAP_DEBOUNCE_MS', 1000, 100, 10000);
+const port = getValidatedIntEnv('PORT', 3000, 1, 65535);
+const chainId = getValidatedIntEnv('CHAIN_ID', 8453, 1, 2147483647);
 
 // Validate NFC port is configured
 validateNfcPort(nfcPort, platformInfo.platform);
