@@ -44,10 +44,10 @@ export class CommerceClient {
       addresses: charge.addresses,
       pricing: charge.pricing,
       expiresAt: charge.expires_at,
-      timeline: charge.timeline,
     };
 
     if (includeStatus) {
+      transformed.timeline = charge.timeline;
       // Defensive: handle empty or missing timeline
       transformed.status = charge.timeline?.[charge.timeline.length - 1]?.status;
       transformed.payments = charge.payments;
