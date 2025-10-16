@@ -7,8 +7,14 @@ Node.js terminal software for FastPay NFC tap-to-pay crypto payments.
 ### Prerequisites
 
 - Node.js v20+
-- Python 3.11+ with dependencies:
+- Python 3.11+ with dependencies (use virtual environment recommended):
   ```bash
+  # Recommended: Use virtual environment for dependency isolation
+  python3 -m venv .venv
+  source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+  pip install adafruit-circuitpython-pn532 pyserial
+
+  # Alternative: Install globally (use if virtual env not desired)
   pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
   ```
 - PN532 NFC module connected via USB-UART or GPIO UART
@@ -141,6 +147,11 @@ The terminal application coordinates:
 ### "No module named 'adafruit_pn532'"
 
 ```bash
+# If using virtual environment (recommended)
+source .venv/bin/activate
+pip install adafruit-circuitpython-pn532 pyserial
+
+# If installing globally
 pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
 ```
 

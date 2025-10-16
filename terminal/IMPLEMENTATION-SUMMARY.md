@@ -991,7 +991,7 @@ console.log(`Payment confirmed in ${Date.now() - startTime}ms (total)`);
 **Day 3-4: Raspberry Pi Migration**
 - [ ] Set up Raspberry Pi 4 (2GB+ RAM)
 - [ ] Install Node.js v20: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install nodejs`
-- [ ] Install Python dependencies: `sudo pip3 install adafruit-circuitpython-pn532 pyserial`
+- [ ] Install Python dependencies: `pip3 install --user adafruit-circuitpython-pn532 pyserial`
 - [ ] Clone repo to Pi: `git clone <repo> && cd fastpay/terminal`
 - [ ] Update `.env`: `NFC_PORT=/dev/ttyAMA0` (GPIO UART)
 - [ ] Configure Pi UART: Edit `/boot/config.txt` → `enable_uart=1`, `dtoverlay=disable-bt`

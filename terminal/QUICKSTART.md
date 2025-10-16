@@ -228,7 +228,20 @@ sudo apt install python3
 
 ### "No module named 'adafruit_pn532'"
 
-Install Python dependencies:
+Install Python dependencies (recommended: use a virtual environment):
+
+```bash
+# Recommended: Use virtual environment for dependency isolation
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install adafruit-circuitpython-pn532 pyserial
+```
+
+**Why use a virtual environment?**
+
+Virtual environments keep your project dependencies isolated from system Python packages, preventing conflicts and making it easier to manage requirements.
+
+**Alternative: Global installation (if virtual environment not desired):**
 
 ```bash
 pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
