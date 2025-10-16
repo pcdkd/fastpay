@@ -69,13 +69,10 @@ export class NFCBridge extends EventEmitter {
     const pythonExecutable = this.config.pythonExecutable || DEFAULT_PYTHON_EXECUTABLE;
 
     // Validate pythonExecutable to prevent command injection and path traversal
-    // Only allow bare command names (no paths) that start with 'python'
-    if (
-      pythonExecutable.includes('/') ||
-      pythonExecutable.includes('\\') ||
-      !path.basename(pythonExecutable).startsWith('python')
-    ) {
-      const message = `Invalid python executable configured. Only 'python' or 'pythonX.Y' (no path) are allowed. Provided: ${pythonExecutable}`;
+    // Only allow: python, pythonX, or pythonX.Y (e.g., python, python3, python3.9)
+    // Strict regex prevents executables like 'python-is-evil'
+    if (!/^python(\d+(\.\d+){0,2})?$/.test(pythonExecutable)) {
+      const message = `Invalid python executable configured. Only 'python', 'pythonX', or 'pythonX.Y' (no path) are allowed. Provided: ${pythonExecutable}`;
       console.error(`[NFC] ${message}`);
       this.emit('error', {
         message,
@@ -128,11 +125,11 @@ export class NFCBridge extends EventEmitter {
             const event = JSON.parse(line);
             this.handleEvent(event);
           } catch (err) {
-            console.error('[NFC] Invalid JSON from Python:', line);
             // Truncate raw line to avoid leaking sensitive data
             const sanitizedRaw = line.length > MAX_RAW_JSON_ERROR_LENGTH
               ? line.substring(0, MAX_RAW_JSON_ERROR_LENGTH) + '... [truncated]'
               : line;
+            console.error('[NFC] Invalid JSON from Python:', sanitizedRaw);
             this.emit('error', {
               message: `Invalid JSON from Python: ${err.message}`,
               fatal: false,
@@ -200,10 +197,9 @@ export class NFCBridge extends EventEmitter {
     if (this.process) {
       // Set up SIGKILL timeout in case process doesn't respond to SIGTERM
       this.killTimeout = setTimeout(() => {
-        // Use optional chaining to prevent race condition crash
-        this.process?.kill('SIGKILL');
         if (this.process) {
           console.warn('[NFC] Python process did not exit gracefully, sending SIGKILL');
+          this.process.kill('SIGKILL');
         }
       }, GRACEFUL_SHUTDOWN_TIMEOUT_MS);
 
