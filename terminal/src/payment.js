@@ -112,17 +112,17 @@ export class PaymentManager {
    * @returns {Object|null} Associated charge or null if no pending charges
    */
   associateTap(tapUid) {
-    // Find most recent untapped charge using direct iteration (avoids array allocation)
-    // Skip expired charges to prevent associating taps with charges that haven't been cleaned up yet
+    // Find the most recent untapped charge. Since Maps preserve insertion order, we can
+    // iterate backwards to find the most recent charge first and exit early.
     const now = Date.now();
+    const charges = Array.from(this.pendingCharges.values());
     let charge = null;
-    for (const c of this.pendingCharges.values()) {
-      if (
-        !c.tapUid &&
-        (now - c.createdAt < CHARGE_EXPIRATION_MS) &&
-        (!charge || c.createdAt > charge.createdAt)
-      ) {
+    for (let i = charges.length - 1; i >= 0; i--) {
+      const c = charges[i];
+      // Find the first (most recent) charge that is not tapped and not expired
+      if (!c.tapUid && (now - c.createdAt < CHARGE_EXPIRATION_MS)) {
         charge = c;
+        break;  // Early exit - found the most recent valid charge
       }
     }
 
@@ -164,10 +164,11 @@ export class PaymentManager {
    * Get pending charge by ID
    *
    * @param {string} chargeId - Charge identifier
-   * @returns {Object|undefined} Charge data or undefined
+   * @returns {Object|undefined} Charge data (shallow copy) or undefined
    */
   getPendingCharge(chargeId) {
-    return this.pendingCharges.get(chargeId);
+    const charge = this.pendingCharges.get(chargeId);
+    return charge ? { ...charge } : undefined;
   }
 
   /**
