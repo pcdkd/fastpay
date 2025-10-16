@@ -25,7 +25,7 @@ export function createWebhookServer(config, paymentManager) {
 
   // Raw body needed for signature verification (with size limit to prevent DoS)
   app.use(express.json({
-    limit: '100kb',  // Prevent large payload attacks
+    limit: '10kb',  // Prevent large payload attacks (Coinbase Commerce webhooks are <10kb)
     verify: (req, res, buf) => {
       req.rawBody = buf.toString();
     },
@@ -124,13 +124,19 @@ function handleChargeConfirmed(event, events, paymentManager) {
 
   console.log(`[Webhook] ✅ Payment confirmed for charge: ${charge.id}`);
 
+  // Find the confirmation time from the charge timeline
+  const confirmedTimelineEntry = Array.isArray(charge.timeline)
+    ? charge.timeline.find(entry => entry.status === 'CONFIRMED')
+    : null;
+  const confirmedAt = confirmedTimelineEntry ? confirmedTimelineEntry.time : null;
+
   // Extract payment details
   const paymentDetails = {
     chargeId: charge.id,
     amount: charge.pricing.local.amount,
     currency: charge.pricing.local.currency,
     payments: charge.payments,
-    confirmedAt: event.created_at,  // Use Coinbase timestamp, not local processing time
+    confirmedAt,  // Use actual confirmation time from timeline
   };
 
   // Emit event for main app to consume
@@ -140,7 +146,7 @@ function handleChargeConfirmed(event, events, paymentManager) {
   try {
     paymentManager.completePurchase(charge.id);
   } catch (error) {
-    console.error(`[Webhook] Error cleaning up charge ${charge.id}:`, error.message);
+    console.error(`[Webhook] Error completing purchase for charge ${charge.id}:`, error.message);
     // Event was already emitted, so log error but don't fail webhook
   }
 }
