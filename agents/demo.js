@@ -20,7 +20,7 @@ const CONFIG = {
   customerKey: process.env.CUSTOMER_PRIVATE_KEY,
 
   // Demo settings
-  paymentAmount: process.env.PAYMENT_AMOUNT || '5.00' // $5 USD
+  paymentAmount: process.env.PAYMENT_AMOUNT || '0.50' // $0.50 USD
 };
 
 // Validate configuration
@@ -81,7 +81,7 @@ async function runDemo() {
     printKeyValue('Customer Agent', customerAgent.address);
     printKeyValue('FastPay Contract', CONFIG.fastPayAddress);
     printKeyValue('USDC Token', CONFIG.usdcAddress);
-    printKeyValue('Network', `Base Mainnet (Chain ID: ${CONFIG.chainId})`);
+    printKeyValue('Network', CONFIG.chainId === 84532 ? `Base Sepolia Testnet (Chain ID: ${CONFIG.chainId})` : `Base Mainnet (Chain ID: ${CONFIG.chainId})`);
 
     // Step 2: Check initial balances
     printSection('Step 2: Initial Balances');

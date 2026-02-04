@@ -28,8 +28,9 @@ You need 3 wallets:
 
 ### 3. Get API Keys
 
-**Basescan API Key** (for contract verification):
-- Sign up: https://basescan.org/myapikey
+**Etherscan API Key** (for contract verification):
+- Sign up: https://etherscan.io/myapikey
+- Etherscan V2 unified API - one key works across all 60+ chains (Base, Ethereum, Arbitrum, etc.)
 - Free tier is sufficient
 
 ---
@@ -49,7 +50,7 @@ Edit `.env`:
 BASE_RPC_URL=https://sepolia.base.org
 CHAIN_ID=84532
 PRIVATE_KEY=<your_deployer_wallet_private_key>
-BASESCAN_API_KEY=<your_basescan_api_key>
+ETHERSCAN_API_KEY=<your_etherscan_api_key>
 USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 ```
 

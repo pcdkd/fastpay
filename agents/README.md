@@ -2,6 +2,17 @@
 
 JavaScript SDK for building AI agents that can send and receive pull payments.
 
+## ✅ Live Demo Available
+
+**The FastPay Agent SDK is ready to use with our deployed contract on Base Sepolia!**
+
+- **Live Contract:** `0xa6Dde921ef709471C61a52c0faAf47a97D59c35a`
+- **Demo Transaction:** [View on Basescan](https://sepolia.basescan.org/tx/0xb6f03b7d263c151e3e47c2de3e0c0fbb5fdbb97f99aa4d190a60c071a8d093b4)
+- **Payment Amount:** $0.50 USDC
+- **Status:** ✅ Tested end-to-end
+
+---
+
 ## Overview
 
 This SDK provides merchant and customer agent classes that handle:
@@ -24,12 +35,12 @@ nano .env  # Add your configuration
 ```
 
 Required environment variables:
-- `FASTPAY_ADDRESS` - Deployed FastPayCore contract address
+- `FASTPAY_ADDRESS` - Deployed FastPayCore contract address (`0xa6Dde921ef709471C61a52c0faAf47a97D59c35a` on Sepolia)
 - `MERCHANT_PRIVATE_KEY` - Merchant wallet private key (needs ETH for gas)
 - `CUSTOMER_PRIVATE_KEY` - Customer wallet private key (needs USDC only!)
-- `BASE_RPC_URL` - RPC endpoint (default: Base Sepolia testnet)
-- `CHAIN_ID` - Chain ID (84532 for Sepolia, 8453 for mainnet)
-- `USDC_ADDRESS` - USDC token address (default: Base Sepolia USDC)
+- `BASE_RPC_URL` - RPC endpoint (default: `https://sepolia.base.org`)
+- `CHAIN_ID` - Chain ID (`84532` for Sepolia, `8453` for mainnet)
+- `USDC_ADDRESS` - USDC token address (`0x036CbD53842c5426634e7929541eC2318f3dCF7e` on Sepolia)
 
 **Get test tokens:**
 - Base Sepolia ETH: https://www.alchemy.com/faucets/base-sepolia
@@ -42,11 +53,13 @@ npm run demo
 ```
 
 This will execute an agent-to-agent payment demonstrating:
-1. Merchant creates $5 payment request
+1. Merchant creates $0.50 payment request
 2. Customer evaluates against policy
 3. Customer signs authorization (GASLESS)
 4. Merchant executes payment (pays gas)
 5. Payment completes in <10 seconds
+
+**Note:** Demo uses live contract on Base Sepolia testnet.
 
 ## Agent SDK Usage
 

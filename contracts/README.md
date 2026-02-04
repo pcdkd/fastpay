@@ -2,6 +2,23 @@
 
 Pull payment protocol for agent commerce on Base L2.
 
+## ✅ Live Deployment
+
+**FastPayCore is deployed and verified on Base Sepolia!**
+
+- **Contract Address:** `0xa6Dde921ef709471C61a52c0faAf47a97D59c35a`
+- **Network:** Base Sepolia Testnet (Chain ID: 84532)
+- **Explorer:** [View on Basescan](https://sepolia.basescan.org/address/0xa6Dde921ef709471C61a52c0faAf47a97D59c35a)
+- **Status:** ✅ Verified source code
+- **Demo Transaction:** [View on Basescan](https://sepolia.basescan.org/tx/0xb6f03b7d263c151e3e47c2de3e0c0fbb5fdbb97f99aa4d190a60c071a8d093b4)
+
+**Performance:**
+- Gas Used: 137,691 per payment (~$0.0006)
+- Customer Cost: $0.00 (gasless!)
+- Settlement Time: < 10 seconds
+
+---
+
 ## Overview
 
 FastPayCore enables **gasless customer payments** by inverting the traditional crypto payment flow:
@@ -69,7 +86,7 @@ forge test --match-test testExecutePullPayment -vvv
 
 ```bash
 cp .env.example .env
-nano .env  # Add your PRIVATE_KEY and BASESCAN_API_KEY
+nano .env  # Add your PRIVATE_KEY and ETHERSCAN_API_KEY
 ```
 
 **Get test tokens:**

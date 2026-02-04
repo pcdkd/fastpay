@@ -1,17 +1,17 @@
 # FastPay Hackathon - Current Status
 
-**Last Updated:** February 4, 2026
+**Last Updated:** February 4, 2026 - 21:00 UTC
 **Target Deadline:** February 8, 2025 - 12 PM PST
 **Track:** Most Novel Smart Contract (OpenClaw USDC Hackathon)
 
 ---
 
-## 📊 Overall Progress: Day 2 Complete (50% Done)
+## 📊 Overall Progress: Day 3 Complete (75% Done) 🎉
 
 - ✅ **Day 1:** Smart Contract Development - COMPLETE
 - ✅ **Day 2:** Agent SDK Development - COMPLETE
-- ⏳ **Day 3:** Deployment & Testing - PENDING
-- ⏳ **Day 4:** Documentation & Submission - PENDING
+- ✅ **Day 3:** Deployment & Testing - COMPLETE ⭐
+- ⏳ **Day 4:** Documentation & Submission - IN PROGRESS
 
 ---
 
@@ -109,16 +109,58 @@ Suite result: ok. 11 passed; 0 failed; 0 skipped
 
 ---
 
-## ⏳ Day 3 Pending: Deployment & Testing
+## ✅ Day 3 Complete: Deployment & Testing (Feb 4) ⭐
 
-### Ready to Deploy
+### Deployed Contract
 
-**Configuration Status:**
-- ✅ Foundry configured for Base Sepolia
-- ✅ Deployment script ready
-- ✅ Contract verification setup
-- ⏳ Need to configure .env with private keys
-- ⏳ Need to fund test wallets
+**FastPayCore on Base Sepolia** ✅
+- **Contract Address:** `0xa6Dde921ef709471C61a52c0faAf47a97D59c35a`
+- **Network:** Base Sepolia Testnet (Chain ID: 84532)
+- **Block:** Deployed successfully
+- **Verification:** ✅ Source code verified on Basescan
+- **Explorer:** https://sepolia.basescan.org/address/0xa6Dde921ef709471C61a52c0faAf47a97D59c35a
+
+### Test Transactions
+
+**1. USDC Approval Transaction** ✅
+- **TX Hash:** `0xcce60806b526a112bf4f17f802939dd3cb90019863c2c50d97199a4a94112c3d`
+- **Purpose:** Customer approved FastPay to spend USDC
+- **Explorer:** https://sepolia.basescan.org/tx/0xcce60806b526a112bf4f17f802939dd3cb90019863c2c50d97199a4a94112c3d
+
+**2. Pull Payment Execution** ✅
+- **TX Hash:** `0xb6f03b7d263c151e3e47c2de3e0c0fbb5fdbb97f99aa4d190a60c071a8d093b4`
+- **Block:** 37,235,236
+- **Gas Used:** 137,691 gas
+- **Amount:** 0.50 USDC transferred
+- **Explorer:** https://sepolia.basescan.org/tx/0xb6f03b7d263c151e3e47c2de3e0c0fbb5fdbb97f99aa4d190a60c071a8d093b4
+
+### Demo Results
+
+**Test Wallets:**
+- **Merchant:** `0xc7a0b5E5E2F68D70e5D40b730500972ecfd56aD0`
+  - Initial: 1.970362425968570715 ETH
+  - Final: 1.970362246403502622 ETH
+  - Gas Spent: ~0.000000179565068093 ETH (~$0.0006)
+  - USDC Received: +0.50 USDC
+
+- **Customer:** `0x44b85A0E6406601884621a894E0dDf16CFA6f308`
+  - Initial: 20.0 USDC
+  - Final: 19.5 USDC
+  - USDC Spent: -0.50 USDC
+  - ETH Required: ❌ NONE (completely gasless!)
+
+### Key Achievements
+
+✅ **Smart Contract Deployed:** FastPayCore live on Base Sepolia
+✅ **Contract Verified:** Source code verified on Basescan
+✅ **First Payment Executed:** $0.50 USDC pull payment successful
+✅ **Gasless Customer:** Customer signed without any ETH
+✅ **Gas Efficiency:** 137k gas per payment (~$0.0006 on Base)
+✅ **End-to-End Demo:** Complete flow tested and documented
+
+---
+
+## ⏳ Day 4 In Progress: Documentation & Submission
 
 ### Deployment Steps
 
@@ -126,7 +168,7 @@ Suite result: ok. 11 passed; 0 failed; 0 skipped
 # 1. Configure deployment wallet
 cd contracts
 cp .env.example .env
-# Edit .env: Add PRIVATE_KEY and BASESCAN_API_KEY
+# Edit .env: Add PRIVATE_KEY and ETHERSCAN_API_KEY
 
 # 2. Deploy to Base Sepolia
 forge script script/Deploy.s.sol:DeployScript \

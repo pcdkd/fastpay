@@ -2,63 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## CRITICAL: Phase 1 vs Phase 2 Architecture
+## Project Overview
 
-**⚠️ IMPORTANT:** FastPay has two distinct phases with different payment models:
+FastPay is a tap-to-pay crypto payment system with three distinct implementations:
 
-### Phase 1 (CURRENT - What's Built)
-- **Payment Model:** Traditional PUSH payments via Coinbase Commerce API
-- **NFC Role:** Tap detection only (reader mode) - does NOT transfer transaction data
-- **Customer Flow:** Tap phone (optional) → Scan QR code → Open Coinbase Commerce → Approve payment
-- **Blockchain:** Customer PUSHES funds to merchant's deposit address (standard crypto payment)
-- **Status:** ✅ Implemented in `terminal/` directory, ready for testing
+### 1. Terminal Application (`terminal/`)
+**Status:** ✅ Phase 1 Complete - Traditional PUSH payments via Coinbase Commerce
+- **Payment Model:** Customer scans QR → Approves payment → Pushes USDC to merchant
+- **NFC Role:** Reader mode (tap detection only) - does NOT transfer transaction data
+- **Tech:** Node.js orchestration + Python (PN532 NFC hardware) + Coinbase Commerce API
+- **Use Case:** Merchant point-of-sale system
 
-### Phase 2 (FUTURE - Not Yet Built)
-- **Payment Model:** TRUE PULL payments via smart contracts
-- **NFC Role:** Transfers transaction data to phone (payment request details)
-- **Customer Flow:** Tap phone → Transaction appears in wallet → Sign to complete
-- **Blockchain:** Smart contract PULLS funds from customer when they sign (merchant-initiated)
-- **Status:** ⏳ Documented in `terminal-implementation.md`, planned for Months 2-3
+### 2. Smart Contracts (`contracts/`)
+**Status:** ✅ Day 1-2 Complete - Pull payment protocol with EIP-712 signatures
+- **Payment Model:** TRUE PULL payments - merchant can withdraw from customer's allowance
+- **Protocol:** `FastPayCore.sol` - gasless customer signatures, merchant executes & pays gas
+- **Tech:** Solidity, Foundry, Base L2, works with any ERC-20 (USDC optimized)
+- **Use Case:** AI agent commerce (agents don't need ETH for gas)
 
-**Key Insight:** Phase 1 is NOT a pull payment model. The "pull" refers only to merchant-initiated UX (merchant creates request first), not blockchain-level pull payments. Phase 2 is where true pull payments happen.
+### 3. Agent SDK (`agents/`)
+**Status:** ✅ Day 1-2 Complete - JavaScript SDK for agent wallets
+- **Purpose:** Allows AI agents to create wallets, hold USDC, sign payment authorizations
+- **Tech:** ethers.js v6, EIP-712 signing, nonce management
+- **Components:** `AgentWallet.js` (class), `demo.js` (example usage)
+- **Use Case:** AI agents that need to make/receive crypto payments
 
-## Project Status
+**Key Distinction:** Terminal uses Coinbase Commerce (push payments). Contracts + Agents implement true pull payments (EIP-712 signature-based).
 
-**What's Currently Built:**
-- ✅ Terminal software (`terminal/`) - Node.js + Python NFC bridge
-- ✅ NFC hardware integration - PN532 reader mode (tap detection only)
-- ✅ Coinbase Commerce integration - Charge creation, hosted checkout, webhooks
-- ✅ Payment orchestration - QR codes, tap association, payment confirmations
+## Architecture Summary
 
-**What's Next:**
-1. Configure Coinbase Commerce API key in `terminal/.env`
-2. Test first end-to-end payment
-3. Deploy to Raspberry Pi (optional)
-4. Build Phase 2 smart contracts (future)
-
-**Key Documentation:**
-- `terminal/QUICKSTART.md` - Step-by-step setup (start here)
-- `terminal/IMPLEMENTATION-SUMMARY.md` - Complete implementation details
-- `PAYMENT-INTENT-DECISION.md` - Why Coinbase Commerce for Phase 1
-- `test/CARD-EMULATION-FINDINGS.md` - Why card emulation was abandoned
-
-## High-Level Architecture
-
-FastPay is a tap-to-pay crypto payment terminal (merchant-initiated, like credit card terminals).
-
-**Tech Stack:**
-- **Terminal:** Node.js v20 (payment orchestration) + Python 3.11+ (NFC hardware bridge)
-- **NFC Hardware:** PN532 module (UART), reader mode (tap detection only)
-- **Payment Provider:** Coinbase Commerce (charge creation, hosted checkout, webhooks)
-- **Blockchain:** Base L2, USDC token
-- **Customer App:** Any wallet (MetaMask, Coinbase Wallet, etc.)
-
-## Key Architectural Decisions
-
-### 1. Three-Layer Architecture (Separation of Concerns)
-
+### Three-Layer Terminal Architecture (Separation of Concerns)
 ```
-Layer 1: NFC TAP DETECTION (Python + PN532)
+Layer 1: NFC TAP DETECTION (Python + PN532 hardware)
 └── Only detects taps and reports UID - no payment logic
 
 Layer 2: PAYMENT ORCHESTRATION (Node.js)
@@ -68,295 +43,203 @@ Layer 3: PAYMENT PROCESSING (External)
 └── Coinbase Commerce handles checkout, blockchain settlement, webhooks
 ```
 
-**Why:** NFC layer is portable (no payment coupling), payment logic is testable (Node.js), terminal works even if NFC fails (QR fallback).
-
-### 2. Reader Mode (Not Card Emulation or Physical Tags)
-
-After testing three approaches, reader mode was selected:
-- **Card Emulation:** Failed - PN532 UART too slow for ISO-DEP timing (see `test/CARD-EMULATION-FINDINGS.md`)
-- **Physical Tags:** Works but unnecessary - customers need internet for blockchain anyway
-- **Reader Mode:** ✅ Selected - detects taps, payment via Coinbase Commerce
-
-### 3. Desktop-First Development
-
-Develop on Mac/Linux with USB-UART, deploy to Pi later. Same codebase, just change `NFC_PORT`.
-- **Development:** `/dev/tty.usbserial-*` (USB-UART adapter)
-- **Production:** `/dev/ttyAMA0` (Raspberry Pi GPIO UART)
-
-## Project Structure
-
-```
-fastpay/
-├── terminal/                          # ✅ IMPLEMENTED: Terminal software
-│   ├── src/
-│   │   ├── index.js                   # Main application entry point
-│   │   ├── nfc.js                     # NFC bridge (Node.js ↔ Python IPC)
-│   │   ├── commerce.js                # Coinbase Commerce API wrapper
-│   │   ├── payment.js                 # Charge lifecycle management
-│   │   └── webhook.js                 # Webhook server
-│   ├── scripts/
-│   │   └── nfc_reader.py              # Python NFC hardware bridge
-│   ├── config/
-│   │   └── index.js                   # Environment configuration
-│   ├── package.json
-│   ├── .env.example
-│   ├── README.md
-│   ├── QUICKSTART.md
-│   └── IMPLEMENTATION-SUMMARY.md
-│
-├── test/                              # Hardware validation scripts
-│   ├── detect-phone-tap.py            # Original tap detection (basis for terminal NFC)
-│   ├── test-adafruit-pn532.py         # Hardware verification
-│   ├── SETUP-SUCCESS.md               # Hardware setup guide
-│   ├── CARD-EMULATION-FINDINGS.md     # Card emulation investigation
-│   └── ...                            # Other diagnostic scripts
-│
-├── CLAUDE.md                          # This file
-├── README.md                          # Project overview
-├── PAYMENT-INTENT-DECISION.md         # Phase 1 architecture decision
-├── terminal-implementation.md         # Implementation plan + Phase 2 spec
-└── implementation-history.md          # Historical debugging notes
-```
+**Why This Works:** NFC layer is hardware-specific but portable. Payment logic is in testable Node.js. Terminal works even if NFC fails (QR fallback). Desktop development with USB-UART → Production on Raspberry Pi GPIO (same codebase, just change `NFC_PORT`).
 
 ## Development Commands
 
-### Initial Setup
+### Terminal Application (terminal/)
 ```bash
-# Python dependencies (for NFC hardware)
+# Initial setup
 pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
+cd terminal && npm install
+cp .env.example .env  # Configure COINBASE_API_KEY and NFC_PORT
 
-# Terminal dependencies
-cd terminal
-npm install
+# Run terminal
+npm run dev          # Development mode (auto-restart)
+npm start           # Production mode
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your Coinbase Commerce API key and serial port
+# Standalone NFC testing
+python3 scripts/nfc_reader.py  # Test NFC without payment logic
 ```
 
-### Running the Terminal
+### Smart Contracts (contracts/)
 ```bash
-cd terminal
+# Setup (requires Foundry)
+cd contracts
+forge install && forge build
 
-# Development mode (auto-restart on changes)
-npm run dev
+# Testing
+forge test              # Run all tests
+forge test -vv          # Verbose output
+forge test --gas-report # Show gas costs
+forge test --match-test testExecutePullPayment -vvv  # Specific test
 
-# Production mode
-npm start
+# Deployment
+forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url base_sepolia --broadcast --verify  # Testnet
+forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url base --broadcast --verify          # Mainnet
 ```
 
-### Hardware Testing
+### Agent SDK (agents/)
+```bash
+cd agents
+npm install
+cp .env.example .env  # Configure RPC_URL, CONTRACT_ADDRESS, etc.
+npm run demo         # Run demo showing agent wallet creation and payment
+```
+
+### Hardware Testing (test/)
 ```bash
 cd test
-
-# Verify PN532 hardware
-python3 test-adafruit-pn532.py
-
-# Test tap detection (standalone)
-python3 detect-phone-tap.py
+python3 test-adafruit-pn532.py  # Verify PN532 hardware works
+python3 detect-phone-tap.py     # Test tap detection
+ls /dev/tty.usbserial*          # Find USB-UART port (Mac/Linux)
+ls /dev/ttyAMA*                 # Find GPIO UART port (Raspberry Pi)
 ```
 
-### Terminal Testing
-```bash
-# Test NFC reader standalone (without full terminal)
-cd terminal
-python3 scripts/nfc_reader.py
+## Key Implementation Details
 
-# Find serial port
-ls /dev/tty.usbserial*   # macOS/Linux USB-UART
-ls /dev/ttyUSB*          # Linux USB
-ls /dev/ttyAMA*          # Raspberry Pi GPIO
-```
-
-## Phase 1 Payment Flow (Current Implementation)
-
+### Terminal Payment Flow (terminal/)
 ```
 1. Merchant enters amount → Terminal creates Coinbase Commerce charge
 2. Terminal displays QR code (hosted_url)
 3. Customer taps phone (optional) → PN532 detects tap, associates with charge
-4. Customer scans QR code → Opens Coinbase Commerce checkout in browser
-5. Customer selects wallet → Approves payment → PUSHES funds to deposit address
+4. Customer scans QR code → Opens Coinbase Commerce in browser
+5. Customer approves → PUSHES USDC to deposit address
 6. Coinbase webhook fires → Terminal shows "Payment Confirmed!"
+
+Time: <10 seconds | NFC: Tap detection only (no data transfer) | Fallback: QR always works
 ```
 
-**Time:** <10 seconds total
-**NFC Role:** Tap detection only (for UX/tracking) - does NOT transfer payment data
-**Fallback:** QR code works even if NFC fails
+**Terminal Modules (terminal/src/):**
+- `index.js` - State machine (IDLE → WAITING_FOR_PAYMENT → COMPLETED), merchant input
+- `nfc.js` - Node.js ↔ Python IPC bridge, spawns `scripts/nfc_reader.py` child process
+- `commerce.js` - Coinbase Commerce API wrapper (charge creation, webhook verification)
+- `payment.js` - Charge lifecycle (Map-based tracking, tap association, auto-expire)
+- `webhook.js` - Express server on port 3000 for payment confirmations
 
-See `terminal/IMPLEMENTATION-SUMMARY.md` for detailed flow and code examples.
-
-## Terminal Implementation Details
-
-### Key Modules (terminal/src/)
-
-**index.js** - Main application
-- State machine: IDLE → WAITING_FOR_PAYMENT → COMPLETED
-- Coordinates all services (NFC, Commerce, Webhooks)
-- Handles merchant input (sale amount)
-
-**nfc.js** - NFC Bridge (Node.js ↔ Python)
-- Spawns Python child process (`scripts/nfc_reader.py`)
-- Parses JSON events from stdout (tap, ready, error)
-- Auto-restarts Python on crash
-
-**commerce.js** - Coinbase Commerce API
-- Creates charges with metadata (terminal_id, tap_uid)
-- Verifies webhook signatures
-
-**payment.js** - Charge Lifecycle
-- Tracks pending charges (Map-based)
-- Associates taps with most recent charge
-- Auto-expires charges after 3 minutes
-- Generates QR codes
-
-**webhook.js** - Payment Confirmations
-- Express server on port 3000
-- Handles `charge:confirmed` events
-- Emits events for main app
-
-### Python NFC Bridge (terminal/scripts/nfc_reader.py)
-
-**IPC Protocol (stdout JSON):**
+**Python NFC Bridge IPC Protocol (stdout JSON):**
 ```json
 {"event": "ready", "firmware": "1.6", "port": "...", "timestamp": ...}
 {"event": "tap", "uid": "086AF124", "timestamp": ...}
 {"event": "error", "message": "...", "fatal": false, "timestamp": ...}
 ```
 
-**Key Features:**
-- Continuous scanning with debounce (ignores re-taps within 1s)
-- Exponential backoff on errors (max 5 retries)
-- Graceful shutdown on SIGINT/SIGTERM
-- Can run standalone for testing
+### Smart Contract Architecture (contracts/)
+```
+FastPayCore.sol - Pull payment protocol
+├── EIP-712 typed signatures (customer signs payment authorization)
+├── Nonce-based replay protection (per-customer incremental)
+├── ReentrancyGuard for security
+├── Gas-optimized (~100k gas per payment)
+└── Token-agnostic (works with any ERC-20)
 
-## NFC Hardware Configuration
+Flow: Customer signs message → Merchant broadcasts tx → Merchant pays gas
+Why: AI agents only need USDC (no ETH for gas)
+```
 
-**Library:** `adafruit-circuitpython-pn532`
+### Agent SDK Design (agents/)
+`AgentWallet.js` class provides:
+- Wallet creation (random private key generation)
+- Balance checking (USDC balance queries)
+- EIP-712 signature generation (typed payment authorizations)
+- Nonce management (auto-increment for replay protection)
+- Demo: `demo.js` shows full customer+merchant interaction
 
-**Critical Fix for USB-UART:** DTR/RTS must be set LOW
+## Critical Technical Details
+
+### NFC Hardware Configuration (PN532)
+**Library:** `adafruit-circuitpython-pn532` (Python)
+
+**CRITICAL FIX for USB-UART converters (FT232/CP2102):**
 ```python
 uart = serial.Serial(PORT, 115200, timeout=1)
-uart.dtr = False  # Required for FT232/CP2102 USB-UART converters
-uart.rts = False  # Required for FT232/CP2102 USB-UART converters
+uart.dtr = False  # REQUIRED - prevents reset on connection
+uart.rts = False  # REQUIRED - prevents reset on connection
 time.sleep(0.2)   # Signal stabilization
 ```
 
-**Wiring:** TX/RX must crossover:
-- Module TX → Converter RX
-- Module RX → Converter TX
+**Wiring (TX/RX MUST crossover):**
+- PN532 TX → USB-UART RX
+- PN532 RX → USB-UART TX
+- Power: 3.3V or 5V (both work)
 
-See `test/SETUP-SUCCESS.md` for verified wiring diagram.
+**Reader Mode Details:**
+- Continuous scanning with 1s debounce (ignores re-taps)
+- Exponential backoff on errors (max 5 retries)
+- UID detection only (no NDEF data transfer)
+- See `test/SETUP-SUCCESS.md` for verified wiring diagram
 
-## Blockchain (Base L2)
+**Why Reader Mode (Not Card Emulation):**
+- Card emulation tested and failed: PN532 UART too slow for ISO-DEP timing requirements
+- See `test/CARD-EMULATION-FINDINGS.md` for full investigation
 
-**Phase 1:** Coinbase Commerce handles all blockchain interaction (charge creation, monitoring, confirmations)
+### Blockchain Configuration (Base L2)
+- **Chain ID:** 8453 (Base Mainnet), 84532 (Base Sepolia testnet)
+- **Token:** USDC - `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (mainnet)
+- **Confirmation:** 1 block (~2-6 seconds)
+- **Gas:** Terminal: Customer pays via Coinbase Commerce | Contracts: Merchant pays
+- **Testnet Faucets:** Base Sepolia ETH - https://www.alchemy.com/faucets/base-sepolia
 
-**Key Details:**
-- Chain ID: 8453 (Base Mainnet)
-- Token: USDC (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
-- Confirmation: 1 block (~2-6 seconds)
-- Gas: Paid by customer via Coinbase Commerce
+### Key Dependencies
+- **Terminal:** Node.js 20+, express, qrcode, dotenv, axios | Python 3.11+, adafruit-circuitpython-pn532, pyserial
+- **Contracts:** Foundry (forge, anvil, cast), Solidity 0.8.20, OpenZeppelin (ReentrancyGuard, IERC20)
+- **Agents:** Node.js, ethers.js v6, dotenv
+- **External:** Coinbase Commerce API (terminal only), Base L2 RPC
 
-**Phase 2:** Direct smart contract interaction for pull payments (see `terminal-implementation.md`)
+## Common Issues & Solutions
 
-## Phase Roadmap
+### NFC Hardware
+**PN532 not responding:**
+1. Power cycle (unplug USB, wait 5s, replug)
+2. Verify `uart.dtr = False` and `uart.rts = False` in code
+3. Check serial port exists: `ls /dev/tty.usbserial*`
+4. Run diagnostic: `python3 test/test-adafruit-pn532.py`
 
-### Phase 1 (Weeks 1-4): ✅ MOSTLY COMPLETE
+**Phone tap not detected:**
+- Enable NFC: Android Settings → Connected devices
+- Place phone FLAT on PN532 (~3-5cm range, not just near)
+- Remove phone case (some block NFC)
+- iOS requires active scan intent (not passive like Android)
 
-**Week 1-2: ✅ DONE**
-- ✅ Hardware setup and validation
-- ✅ Terminal software implemented (`terminal/`)
-- ✅ NFC reader mode integration
-- ✅ Coinbase Commerce API integration
-- ✅ Webhook endpoint
-- ✅ Documentation complete
+**TX/RX wiring:** Must crossover (Module TX → Converter RX, Module RX → Converter TX)
 
-**Week 3-4: IN PROGRESS**
-- [ ] Get Coinbase Commerce API key
-- [ ] Configure `terminal/.env`
-- [ ] Test first end-to-end payment
-- [ ] Deploy to Raspberry Pi (optional)
-- [ ] Measure performance (<10s target)
-
-### Phase 2 (Months 2-3): Pull Payment Smart Contracts
-
-**Features:**
-- On-chain payment request creation
-- True pull payment model (smart contract pulls funds)
-- NFC transfers transaction data (not just tap detection)
-- Customer signs to become counterparty
-- Bypasses Coinbase Commerce for settlement
-
-See `terminal-implementation.md` for detailed Phase 2 architecture and smart contract spec.
-
-## Key Dependencies
-
-**Node.js:** express, qrcode, dotenv, axios (see `terminal/package.json`)
-**Python:** adafruit-circuitpython-pn532, pyserial
-**External Services:** Coinbase Commerce API, Base L2 RPC (via Commerce)
-**Customer:** Any wallet app (MetaMask, Coinbase Wallet, etc.)
-
-## Common Issues
-
-**"No module named 'adafruit_pn532'"**
+### Python/Terminal
+**"No module named 'adafruit_pn532'":**
 ```bash
 pip3 install adafruit-circuitpython-pn532 pyserial --break-system-packages
 ```
 
-**PN532 not responding**
-1. Power cycle (unplug USB, wait 5s, replug)
-2. Verify DTR/RTS set LOW in code (`uart.dtr = False`, `uart.rts = False`)
-3. Check serial port: `ls /dev/tty.usbserial*`
-4. Run diagnostic: `python3 test/test-adafruit-pn532.py`
-
-**Phone tap not detected**
-- Enable phone NFC (Android Settings → Connected devices)
-- Place phone flat on PN532 (not just near it, ~3-5cm range)
-- Remove phone case (some block NFC)
-- iOS requires active scan intent (not passive like Android)
-
-**Serial port permissions (Linux/Pi)**
+**Serial port permissions (Linux/Pi):**
 ```bash
-sudo usermod -a -G dialout $USER
-# Log out and back in
+sudo usermod -a -G dialout $USER  # Then log out and back in
 ```
 
-**Webhook not receiving events**
-- Use ngrok for local testing: `ngrok http 3000`
+**Webhook not receiving events:**
+- Local testing: Use `ngrok http 3000` to expose webhook
 - Configure webhook URL in Coinbase Commerce dashboard
-- Verify `COINBASE_WEBHOOK_SECRET` matches dashboard
+- Verify `COINBASE_WEBHOOK_SECRET` matches dashboard value
 
-**TX/RX wiring**
-- Must crossover: Module TX → Converter RX, Module RX → Converter TX
-- See `test/SETUP-SUCCESS.md` for verified diagram
+### Smart Contracts
+**Foundry not installed:**
+```bash
+curl -L https://foundry.paradigm.xyz | bash && foundryup
+```
 
-## Next Actions
+**Test failures:** Check `.env` has valid `RPC_URL` and funded `PRIVATE_KEY` for testnet
 
-**For first-time setup:**
-1. Read `terminal/QUICKSTART.md` for step-by-step setup
-2. Get Coinbase Commerce API key from https://commerce.coinbase.com/
-3. Configure `terminal/.env` with API key and serial port
-4. Test: `cd terminal && npm run dev`
+## Documentation Index
 
-**For development:**
-- Implementation complete - see `terminal/IMPLEMENTATION-SUMMARY.md` for details
-- Phase 2 planning - see `terminal-implementation.md` for smart contract spec
-- Hardware reference - see `test/SETUP-SUCCESS.md` for wiring
+### Quick Start
+- `README.md` - Project overview and status
+- `terminal/QUICKSTART.md` - Terminal setup guide (start here for terminal)
+- `contracts/README.md` - Smart contract deployment guide
+- `agents/README.md` - Agent SDK usage examples
 
-## Reference Documentation
-
-**For AI Assistants:**
-- This file (CLAUDE.md) - High-level architecture and commands
-- `terminal/IMPLEMENTATION-SUMMARY.md` - Complete implementation details
-- `terminal-implementation.md` - Implementation plan + Phase 2 spec
-- `PAYMENT-INTENT-DECISION.md` - Why Coinbase Commerce for Phase 1
-
-**For Users:**
-- `README.md` - Project overview
-- `terminal/QUICKSTART.md` - Step-by-step setup guide
-- `terminal/README.md` - Terminal documentation
+### Implementation Details
+- `terminal/IMPLEMENTATION-SUMMARY.md` - Complete terminal implementation
 - `test/SETUP-SUCCESS.md` - Hardware wiring guide
-
-**Technical Deep Dives:**
-- `test/CARD-EMULATION-FINDINGS.md` - Why card emulation failed
-- `implementation-history.md` - Historical debugging notes
+- `test/CARD-EMULATION-FINDINGS.md` - Why card emulation was rejected
+- `FastPay-Phase1-ProjectDoc.md` - Original project specification
+- `PAYMENT-INTENT-DECISION.md` - Phase 1 architecture rationale
