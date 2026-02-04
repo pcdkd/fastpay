@@ -1,0 +1,23 @@
+{
+  "name": "@fastpay/agents",
+  "version": "1.0.0",
+  "description": "JavaScript Agent SDK for FastPay pull payment protocol",
+  "type": "module",
+  "scripts": {
+    "demo": "node demo.js"
+  },
+  "keywords": [
+    "fastpay",
+    "agents",
+    "pull-payment",
+    "crypto",
+    "base",
+    "usdc"
+  ],
+  "author": "FastPay",
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.13.0",
+    "dotenv": "^16.4.5"
+  }
+}
